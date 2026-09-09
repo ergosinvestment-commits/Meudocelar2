@@ -1,0 +1,30 @@
+# ============================================================
+# PLANILOJA ACHADINHOS - CONFIGURAÇÃO APACHE / HOSTINGER (.HTACCESS)
+# ============================================================
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Roteamento de Requisições de API para o script PHP nativo
+  RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+  RewriteRule ^api$ api/index.php [QSA,L]
+
+  # 2. Se o arquivo ou pasta requisitado existir de verdade, entrega diretamente
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. Fallback do React Router SPA para o index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Desativa listagem de diretórios
+Options -Indexes
+
+# Cabeçalhos de segurança e compressão básica
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set X-XSS-Protection "1; mode=block"
+</IfModule>
