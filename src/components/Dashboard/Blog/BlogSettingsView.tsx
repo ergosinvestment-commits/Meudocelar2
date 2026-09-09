@@ -11,7 +11,10 @@ import {
   ensureBlogTablesInMySql,
   fetchBlogSqlScript,
   fetchStoreConfig,
-  updateStoreConfig
+  updateStoreConfig,
+  fetchAdminInstitutional,
+  saveAdminInstitutional,
+  ensureInstitutionalTableInMySql
 } from '../../../api/client';
 import { normalizeImageUrl } from '../../../utils';
 import { compressImageToWebP } from '../../../utils/imageCompressor';
@@ -197,6 +200,34 @@ export default function BlogSettingsView({
   const [instPoliticaPrivacidade, setInstPoliticaPrivacidade] = useState<string>('');
   const [instActiveTab, setInstActiveTab] = useState<'dados' | 'sobre' | 'afiliados' | 'termos' | 'privacidade'>('dados');
   const [savingInst, setSavingInst] = useState<boolean>(false);
+  const [syncingInstTable, setSyncingInstTable] = useState<boolean>(false);
+
+  async function handleSyncInstitutionalTable() {
+    try {
+      setSyncingInstTable(true);
+      setFeedback(null);
+      const res = await ensureInstitutionalTableInMySql(storeSlug);
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: '✓ Tabela institutional_pages e colunas institucionais validadas com sucesso no MySQL da Hostinger!'
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Aviso MySQL: ' + (res.message || 'Verifique as credenciais do banco na aba Banco de Dados.')
+        });
+      }
+      setTimeout(() => setFeedback(null), 6000);
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: 'Erro ao validar tabela no MySQL: ' + (err?.message || 'Falha de conexão')
+      });
+    } finally {
+      setSyncingInstTable(false);
+    }
+  }
 
   useEffect(() => {
     loadSettings();
@@ -205,15 +236,25 @@ export default function BlogSettingsView({
   async function loadSettings() {
     try {
       setLoading(true);
-      const [data, storeConfigData, categoriesData, postsData, productsData] = await Promise.all([
+      const [data, storeConfigData, categoriesData, postsData, productsData, instData] = await Promise.all([
         fetchAdminBlogSettings(storeSlug),
         fetchStoreConfig(storeSlug).catch(() => null),
         fetchAdminBlogCategories(storeSlug).catch(() => []),
         fetchAdminBlogPosts(storeSlug).catch(() => []),
-        fetchAdminProducts(storeSlug).catch(() => [])
+        fetchAdminProducts(storeSlug).catch(() => []),
+        fetchAdminInstitutional(storeSlug).catch(() => null)
       ]);
 
-      if (storeConfigData) {
+      if (instData) {
+        setInstStoreName(instData.storeName || storeConfigData?.storeName || data?.blogStoreName || '');
+        setInstCnpj(instData.cnpj || storeConfigData?.cnpj || data?.cnpj || '');
+        setInstEndereco(instData.endereco || storeConfigData?.endereco || data?.endereco || '');
+        setInstEmail(instData.email || storeConfigData?.email || data?.email || '');
+        setInstSobreNos(instData.sobreNos || storeConfigData?.sobreNos || data?.sobreNos || '');
+        setInstTextoDisclosure(instData.textoDisclosure || storeConfigData?.textoDisclosure || data?.textoDisclosure || '');
+        setInstTermosUso(instData.termosUso || storeConfigData?.termosUso || data?.termosUso || '');
+        setInstPoliticaPrivacidade(instData.politicaPrivacidade || storeConfigData?.politicaPrivacidade || data?.politicaPrivacidade || '');
+      } else if (storeConfigData) {
         setInstStoreName(storeConfigData.storeName || data?.blogStoreName || '');
         setInstCnpj(storeConfigData.cnpj !== undefined ? storeConfigData.cnpj : (data?.cnpj || ''));
         setInstEndereco(storeConfigData.endereco !== undefined ? storeConfigData.endereco : (data?.endereco || ''));
@@ -256,8 +297,8 @@ export default function BlogSettingsView({
         // Initialize per-article sidebar banner
         const published = postsData.filter((p: BlogPost) => p.published !== false);
         if (published.length > 0) {
-          const postWithoutBanner = published.find((p: BlogPost) => !p.sidebarBanner?.imageUrl);
-          const initialArticle = postWithoutBanner || published[0];
+          const withBanner = published.find((p: BlogPost) => p.sidebarBanner?.imageUrl);
+          const initialArticle = withBanner || published[0];
           setSelectedArticleId(initialArticle.id);
           if (initialArticle.sidebarBanner?.imageUrl) {
             setSidebarBannerImg(initialArticle.sidebarBanner.imageUrl || '');
@@ -430,19 +471,12 @@ export default function BlogSettingsView({
   }
 
   function handleNewBanner() {
+    // Find first published post without a banner or fallback to first published post
     const published = blogPosts.filter(p => p.published !== false);
     const postWithoutBanner = published.find(p => !p.sidebarBanner?.imageUrl);
+    const nextPostId = postWithoutBanner ? postWithoutBanner.id : (published[0]?.id || '');
 
-    if (!postWithoutBanner) {
-      setFeedback({
-        type: 'info',
-        message: 'Todos os artigos publicados já possuem banner lateral configurado!'
-      });
-      setTimeout(() => setFeedback(null), 4000);
-      return;
-    }
-
-    setSelectedArticleId(postWithoutBanner.id);
+    setSelectedArticleId(nextPostId);
     setSidebarBannerImg('');
     setSidebarBannerName('');
     setSidebarBannerLink('');
@@ -533,16 +567,15 @@ export default function BlogSettingsView({
       };
 
       const saved = await saveAdminBlogPost(storeSlug, updatedPost);
-      const updatedList = blogPosts.map(p => p.id === saved.id ? saved : p);
-      setBlogPosts(updatedList);
+      setBlogPosts(prev => prev.map(p => p.id === saved.id ? saved : p));
 
-      // Ao excluir, o artigo volta imediatamente a ficar selecionado e disponível para novo cadastro
-      setSelectedArticleId(post.id);
-      setSidebarBannerImg('');
-      setSidebarBannerName('');
-      setSidebarBannerLink('');
-      setSidebarBannerBtn('Quero Conhecer →');
-      setSidebarBannerEnabled(true);
+      if (selectedArticleId === post.id) {
+        setSidebarBannerImg('');
+        setSidebarBannerName('');
+        setSidebarBannerLink('');
+        setSidebarBannerBtn('Quero Conhecer →');
+        setSidebarBannerEnabled(false);
+      }
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('blog-posts-updated', { detail: saved }));
@@ -551,7 +584,7 @@ export default function BlogSettingsView({
 
       setFeedback({
         type: 'success',
-        message: `✓ Banner do artigo "${post.title}" excluído! O artigo voltou para a lista de artigos disponíveis.`
+        message: `✓ Banner do artigo "${post.title}" excluído com sucesso!`
       });
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
@@ -624,8 +657,7 @@ export default function BlogSettingsView({
       const savedPost = await saveAdminBlogPost(storeSlug, updatedPost);
 
       // 2. Update local state
-      const updatedPosts = blogPosts.map(p => p.id === savedPost.id ? savedPost : p);
-      setBlogPosts(updatedPosts);
+      setBlogPosts(prev => prev.map(p => p.id === savedPost.id ? savedPost : p));
 
       // 3. Dispatch events for real-time live views
       if (typeof window !== 'undefined') {
@@ -633,33 +665,10 @@ export default function BlogSettingsView({
         window.dispatchEvent(new CustomEvent('blog-post-updated', { detail: savedPost }));
       }
 
-      // 4. Se o artigo agora tem banner salvo, ele sai da lista de disponíveis para novos banners
-      // e avança automaticamente para o próximo artigo disponível sem banner
-      if (hasImage) {
-        const nextAvailable = updatedPosts.find(p => p.published !== false && !p.sidebarBanner?.imageUrl);
-        if (nextAvailable) {
-          setSelectedArticleId(nextAvailable.id);
-          setSidebarBannerImg('');
-          setSidebarBannerName('');
-          setSidebarBannerLink('');
-          setSidebarBannerBtn('Quero Conhecer →');
-          setSidebarBannerNewTab(true);
-          setSidebarBannerEnabled(true);
-        } else {
-          setSelectedArticleId('');
-          setSidebarBannerImg('');
-          setSidebarBannerName('');
-          setSidebarBannerLink('');
-          setSidebarBannerBtn('Quero Conhecer →');
-          setSidebarBannerNewTab(true);
-          setSidebarBannerEnabled(true);
-        }
-      }
-
       setFeedback({
         type: 'success',
         message: hasImage
-          ? `✓ Banner lateral do artigo "${targetPost.title}" salvo com sucesso! O artigo foi adicionado à tabela acima.`
+          ? `✓ Banner lateral do artigo "${targetPost.title}" salvo com sucesso!`
           : `✓ Banner lateral do artigo "${targetPost.title}" removido com sucesso!`
       });
       setTimeout(() => setFeedback(null), 5000);
@@ -1049,7 +1058,19 @@ export default function BlogSettingsView({
 
       const payload = buildCurrentSettingsPayload(newAdsList);
 
-      const [updatedBlog, updatedStore] = await Promise.all([
+      const instPayload = {
+        storeSlug,
+        storeName: instStoreName.trim() || undefined,
+        cnpj: instCnpj.trim(),
+        endereco: instEndereco.trim(),
+        email: instEmail.trim(),
+        sobreNos: instSobreNos.trim(),
+        textoDisclosure: instTextoDisclosure.trim(),
+        termosUso: instTermosUso.trim(),
+        politicaPrivacidade: instPoliticaPrivacidade.trim()
+      };
+
+      const [updatedBlog, updatedStore, instRes] = await Promise.all([
         saveAdminBlogSettings(storeSlug, payload),
         updateStoreConfig(storeSlug, {
           storeName: instStoreName.trim() || undefined,
@@ -1063,11 +1084,27 @@ export default function BlogSettingsView({
         }).catch((err) => {
           console.warn('Could not update store config for institutional fields:', err);
           return null;
+        }),
+        saveAdminInstitutional(storeSlug, instPayload).catch((err) => {
+          console.warn('Could not save institutional to dedicated table:', err);
+          return null;
         })
       ]);
 
       setSettings(updatedBlog);
       setCategoryAds(updatedBlog.articleFooterAds || newAdsList);
+
+      if (instRes?.data) {
+        setInstStoreName(instRes.data.storeName || '');
+        setInstCnpj(instRes.data.cnpj || '');
+        setInstEndereco(instRes.data.endereco || '');
+        setInstEmail(instRes.data.email || '');
+        setInstSobreNos(instRes.data.sobreNos || '');
+        setInstTextoDisclosure(instRes.data.textoDisclosure || '');
+        setInstTermosUso(instRes.data.termosUso || '');
+        setInstPoliticaPrivacidade(instRes.data.politicaPrivacidade || '');
+      }
+
       setFeedback({
         type: 'success',
         message: 'Configurações de aparência do Blog e dados Institucionais salvos com sucesso!'
@@ -1078,6 +1115,7 @@ export default function BlogSettingsView({
         if (updatedStore) {
           window.dispatchEvent(new CustomEvent('store-config-updated', { detail: updatedStore }));
         }
+        window.dispatchEvent(new CustomEvent('institutional-updated', { detail: instPayload }));
       }
       onSaved?.(updatedBlog);
       setTimeout(() => setFeedback(null), 5000);
@@ -1094,7 +1132,24 @@ export default function BlogSettingsView({
     try {
       setSavingInst(true);
       setFeedback(null);
-      const [updatedStore, updatedBlog] = await Promise.all([
+
+      const instPayload = {
+        storeSlug,
+        storeName: instStoreName.trim() || undefined,
+        cnpj: instCnpj.trim(),
+        endereco: instEndereco.trim(),
+        email: instEmail.trim(),
+        sobreNos: instSobreNos.trim(),
+        textoDisclosure: instTextoDisclosure.trim(),
+        termosUso: instTermosUso.trim(),
+        politicaPrivacidade: instPoliticaPrivacidade.trim()
+      };
+
+      const [instRes, updatedStore, updatedBlog] = await Promise.all([
+        saveAdminInstitutional(storeSlug, instPayload).catch((err) => {
+          console.error('Error in saveAdminInstitutional:', err);
+          return null;
+        }),
         updateStoreConfig(storeSlug, {
           storeName: instStoreName.trim() || undefined,
           cnpj: instCnpj.trim(),
@@ -1116,12 +1171,28 @@ export default function BlogSettingsView({
         }).catch(() => null)
       ]);
 
+      if (instRes?.data) {
+        setInstStoreName(instRes.data.storeName || '');
+        setInstCnpj(instRes.data.cnpj || '');
+        setInstEndereco(instRes.data.endereco || '');
+        setInstEmail(instRes.data.email || '');
+        setInstSobreNos(instRes.data.sobreNos || '');
+        setInstTextoDisclosure(instRes.data.textoDisclosure || '');
+        setInstTermosUso(instRes.data.termosUso || '');
+        setInstPoliticaPrivacidade(instRes.data.politicaPrivacidade || '');
+      }
+
       if (updatedBlog) {
         setSettings(updatedBlog);
       }
+
+      const successMsg = instRes?.mysqlSaved
+        ? '✓ Dados Institucionais salvos com sucesso no Banco de Dados (MySQL) e no Portal!'
+        : '✓ Dados Institucionais salvos com sucesso!' + (instRes?.mysqlError ? ` (Aviso MySQL: ${instRes.mysqlError})` : '');
+
       setFeedback({
         type: 'success',
-        message: 'Dados da Página Institucional salvos com sucesso!'
+        message: successMsg
       });
       if (typeof window !== 'undefined') {
         if (updatedStore) {
@@ -1130,8 +1201,9 @@ export default function BlogSettingsView({
         if (updatedBlog) {
           window.dispatchEvent(new CustomEvent('blog-settings-updated', { detail: updatedBlog }));
         }
+        window.dispatchEvent(new CustomEvent('institutional-updated', { detail: instPayload }));
       }
-      setTimeout(() => setFeedback(null), 5000);
+      setTimeout(() => setFeedback(null), 6000);
     } catch (err: any) {
       console.error('Error saving institutional settings:', err);
       setFeedback({
@@ -1815,19 +1887,35 @@ export default function BlogSettingsView({
                 Configure os dados da sua empresa e o conteúdo exibido nas páginas e abas do <strong>Portal Institucional (/institucional)</strong>.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleSaveInstitutional}
-              disabled={savingInst}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition shadow-xs disabled:opacity-50 cursor-pointer self-start sm:self-auto"
-            >
-              {savingInst ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
-              <span>{savingInst ? 'Salvando...' : 'Salvar Institucional'}</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              <button
+                type="button"
+                onClick={handleSyncInstitutionalTable}
+                disabled={syncingInstTable}
+                title="Cria/valida a tabela institutional_pages e colunas institucionais no MySQL da Hostinger"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition shadow-2xs disabled:opacity-50 cursor-pointer"
+              >
+                {syncingInstTable ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                ) : (
+                  <Database className="w-3.5 h-3.5 text-blue-600" />
+                )}
+                <span>{syncingInstTable ? 'Validando...' : 'Sincronizar no MySQL'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveInstitutional}
+                disabled={savingInst}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                {savingInst ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Save className="w-3.5 h-3.5" />
+                )}
+                <span>{savingInst ? 'Salvando...' : 'Salvar Institucional'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Sub-tabs for Institutional settings */}
@@ -2557,56 +2645,38 @@ export default function BlogSettingsView({
             <div className="space-y-4">
               {/* 1. Escolha do artigo */}
               <div>
-                {(() => {
-                  const availableForSelect = blogPosts
+                <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Escolha do Artigo (Publicado)</span>
+                  <span className="text-[11px] font-normal text-neutral-500">
+                    {blogPosts.filter(p => p.published !== false).length} publicado(s)
+                  </span>
+                </label>
+                <select
+                  value={selectedArticleId}
+                  onChange={(e) => handleSelectArticleForBanner(e.target.value)}
+                  className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-neutral-300 bg-white font-medium focus:outline-none focus:border-amber-600 shadow-2xs cursor-pointer"
+                >
+                  <option value="">-- Selecione um artigo publicado --</option>
+                  {blogPosts
                     .filter(p => p.published !== false)
-                    .filter(p => !p.sidebarBanner?.imageUrl || p.id === selectedArticleId);
-
-                  const countWithoutBanner = blogPosts.filter(p => p.published !== false && !p.sidebarBanner?.imageUrl).length;
-                  const currentSelectedPost = blogPosts.find(p => p.id === selectedArticleId);
-                  const isEditingExisting = Boolean(currentSelectedPost?.sidebarBanner?.imageUrl);
-
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.title} {p.sidebarBanner?.imageUrl ? '★ (Com banner)' : ''}
+                      </option>
+                    ))}
+                </select>
+                {(() => {
+                  const sel = blogPosts.find(p => p.id === selectedArticleId);
+                  if (!sel) return null;
                   return (
-                    <>
-                      <label className="block text-xs font-bold text-neutral-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                        <span>Escolha do Artigo (Disponíveis para Banner)</span>
-                        <span className="text-[11px] font-normal text-neutral-500">
-                          {countWithoutBanner} disponível(is) sem banner
-                        </span>
-                      </label>
-                      <select
-                        value={selectedArticleId}
-                        onChange={(e) => handleSelectArticleForBanner(e.target.value)}
-                        className="w-full text-xs px-3.5 py-2.5 rounded-xl border border-neutral-300 bg-white font-medium focus:outline-none focus:border-amber-600 shadow-2xs cursor-pointer"
-                      >
-                        <option value="">-- Selecione um artigo publicado --</option>
-                        {availableForSelect.map(p => {
-                          const hasBanner = Boolean(p.sidebarBanner?.imageUrl);
-                          return (
-                            <option key={p.id} value={p.id}>
-                              {p.title} {hasBanner ? ' (● Em edição)' : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-
-                      {countWithoutBanner === 0 && !isEditingExisting && (
-                        <p className="text-[11px] text-amber-800 mt-2 font-medium bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                          ✓ Todos os artigos publicados já possuem um banner lateral exclusivo cadastrado na tabela acima. Para editar ou excluir algum banner, utilize os botões da tabela.
-                        </p>
+                    <p className="text-[11px] text-neutral-500 mt-1 flex items-center gap-2">
+                      <span>Categoria: <strong className="text-neutral-700">{sel.category || 'Geral'}</strong></span>
+                      {sel.sidebarBanner?.imageUrl ? (
+                        <span className="text-emerald-600 font-semibold">✓ Já possui banner configurado</span>
+                      ) : (
+                        <span className="text-neutral-400">Sem banner configurado ainda</span>
                       )}
-
-                      {currentSelectedPost && (
-                        <p className="text-[11px] text-neutral-500 mt-1 flex items-center gap-2">
-                          <span>Categoria: <strong className="text-neutral-700">{currentSelectedPost.category || 'Geral'}</strong></span>
-                          {isEditingExisting ? (
-                            <span className="text-amber-700 font-semibold">● Em edição (já cadastrado na tabela)</span>
-                          ) : (
-                            <span className="text-emerald-600 font-semibold">● Disponível para novo banner</span>
-                          )}
-                        </p>
-                      )}
-                    </>
+                    </p>
                   );
                 })()}
               </div>
@@ -2646,15 +2716,11 @@ export default function BlogSettingsView({
                   </label>
 
                   {sidebarBannerImg && (
-                    <div className="flex items-center gap-2.5 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-200">
-                      <img
-                        src={normalizeImageUrl(sidebarBannerImg)}
-                        alt="Banner"
-                        className="w-8 h-10 object-cover rounded border border-neutral-200 shrink-0 shadow-2xs"
-                      />
-                      <span className="text-[11px] text-neutral-700 font-medium truncate max-w-[150px]">
-                        {sidebarBannerName || 'Imagem carregada'}
-                      </span>
+                    <div className="flex items-center gap-3 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-200">
+                      <div className="text-[11px] text-neutral-700 font-medium truncate max-w-[200px] flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="truncate">{sidebarBannerName || 'Imagem carregada'}</span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -2671,7 +2737,7 @@ export default function BlogSettingsView({
                   )}
                 </div>
                 <p className="text-[11px] text-neutral-400 mt-1.5 leading-relaxed">
-                  Envie uma imagem vertical para o banner lateral do artigo.
+                  Envie uma imagem vertical (ex: 300x600 ou formato 4:5 / 9:16). A imagem é otimizada automaticamente.
                 </p>
               </div>
 
@@ -2718,7 +2784,7 @@ export default function BlogSettingsView({
                 </label>
               </div>
 
-              {/* 6. Botão Salvar Banner Lateral */}
+              {/* 7. Botão Salvar Banner Lateral */}
               <div className="pt-2 flex items-center gap-3">
                 <button
                   type="button"
@@ -2738,6 +2804,15 @@ export default function BlogSettingsView({
                     </>
                   )}
                 </button>
+
+                {sidebarBannerImg && (
+                  <span className="text-xs text-neutral-500 font-medium">
+                    Status:{' '}
+                    <strong className={sidebarBannerEnabled ? 'text-emerald-600' : 'text-neutral-500'}>
+                      {sidebarBannerEnabled ? 'Ativo para este artigo' : 'Desativado'}
+                    </strong>
+                  </span>
+                )}
               </div>
             </div>
           </div>

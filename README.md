@@ -70,7 +70,6 @@ pm2 restart all || npm start
 
 ### ✨ Recursos Prontos para Produção:
 - **Build unificado**: `npm run build` gera o frontend em `dist/` e o backend em `dist/server.cjs`.
-- **Banners Laterais por Artigo**: Gestão individual de banners com filtro inteligente e tabela de controle rápido.
 - **Monitor de Preços em Background**: Rotina periódica que verifica links de fornecedores (Hotmart, AliExpress, Shopee, Magalu, Kiwify, etc.).
 - **Upload de Imagens**: Armazenamento automático em `data/uploads/` com compressão WebP.
 - **Banco de Dados Híbrido**: Opera automaticamente em MySQL quando configurado, com fallback e sincronização automática em JSON.

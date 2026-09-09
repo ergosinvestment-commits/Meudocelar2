@@ -14,7 +14,8 @@ import {
   ContactMessage,
   BlogCategory,
   BlogEditor,
-  BlogSettings
+  BlogSettings,
+  InstitutionalData
 } from '../types';
 import { hashPassword, verifyPassword, generateAdminToken } from './security';
 import { mysqlManager } from './mysql';
@@ -119,6 +120,7 @@ interface DatabaseSchema {
   blogEditors?: BlogEditor[];
   priceMonitorSettings?: { [storeSlug: string]: PriceMonitorSettings };
   priceLogs?: { [storeSlug: string]: PriceLogRecord[] };
+  institutionalPages?: { [storeSlug: string]: InstitutionalData };
 }
 
 const DEFAULT_STORE: StoreConfig = {
@@ -1786,6 +1788,7 @@ class DatabaseManager {
       sql += `  \`bannerTitulo\`, \`bannerSubtitulo\`, \`tituloSite\`, \`descricaoSite\`, \`lojaAtiva\`,\n`;
       sql += `  \`mensagemTopo\`, \`corBarraTopo\`, \`cnpj\`, \`endereco\`, \`email\`, \`canalWhatsapp\`,\n`;
       sql += `  \`canalTelegram\`, \`botaoCanalFlutuante\`, \`textoDisclosure\`, \`avisoPrecos\`,\n`;
+      sql += `  \`sobreNos\`, \`termosUso\`, \`politicaPrivacidade\`,\n`;
       sql += `  \`adminUser\`, \`adminEmail\`, \`adminPassword\`\n`;
       sql += `) VALUES (\n`;
       sql += `  ${escapeSql(store.id)}, ${escapeSql(store.slug)}, ${escapeSql(store.storeName)}, ${escapeSql(store.logo)}, ${escapeSql(store.instagram)}, ${escapeSql(store.facebook)}, ${escapeSql(store.tiktok)},\n`;
@@ -1793,8 +1796,9 @@ class DatabaseManager {
       sql += `  ${escapeSql(store.bannerTitulo)}, ${escapeSql(store.bannerSubtitulo)}, ${escapeSql(store.tituloSite)}, ${escapeSql(store.descricaoSite)}, ${escapeSql(store.lojaAtiva)},\n`;
       sql += `  ${escapeSql(store.mensagemTopo)}, ${escapeSql(store.corBarraTopo)}, ${escapeSql(store.cnpj)}, ${escapeSql(store.endereco)}, ${escapeSql(store.email)}, ${escapeSql(store.canalWhatsapp)},\n`;
       sql += `  ${escapeSql(store.canalTelegram)}, ${escapeSql(store.botaoCanalFlutuante)}, ${escapeSql(store.textoDisclosure)}, ${escapeSql(store.avisoPrecos)},\n`;
+      sql += `  ${escapeSql(store.sobreNos || '')}, ${escapeSql(store.termosUso || '')}, ${escapeSql(store.politicaPrivacidade || '')},\n`;
       sql += `  ${escapeSql(store.adminUser)}, ${escapeSql(store.adminEmail)}, ${escapeSql(store.adminPassword)}\n`;
-      sql += `) ON DUPLICATE KEY UPDATE \`storeName\`=VALUES(\`storeName\`), \`updatedAt\`=NOW();\n\n`;
+      sql += `) ON DUPLICATE KEY UPDATE \`storeName\`=VALUES(\`storeName\`), \`sobreNos\`=VALUES(\`sobreNos\`), \`termosUso\`=VALUES(\`termosUso\`), \`politicaPrivacidade\`=VALUES(\`politicaPrivacidade\`), \`updatedAt\`=NOW();\n\n`;
     }
 
     // 2. Categories
@@ -1961,6 +1965,7 @@ class DatabaseManager {
     sql += `  \`status\` varchar(32) DEFAULT 'published',\n`;
     sql += `  \`views\` int(11) DEFAULT 0,\n`;
     sql += `  \`linkedProductIds\` text DEFAULT NULL,\n`;
+    sql += `  \`sidebarBanner\` longtext DEFAULT NULL,\n`;
     sql += `  \`publishedAt\` datetime DEFAULT NULL,\n`;
     sql += `  \`createdAt\` datetime DEFAULT CURRENT_TIMESTAMP,\n`;
     sql += `  \`updatedAt\` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n`;
@@ -1972,17 +1977,18 @@ class DatabaseManager {
       sql += `INSERT INTO \`blog_posts\` (\n`;
       sql += `  \`id\`, \`storeId\`, \`slug\`, \`title\`, \`excerpt\`, \`content\`, \`coverImage\`,\n`;
       sql += `  \`category\`, \`tags\`, \`authorId\`, \`author\`, \`authorAvatar\`, \`authorRole\`, \`authorBio\`,\n`;
-      sql += `  \`readTime\`, \`destaque\`, \`status\`, \`views\`, \`linkedProductIds\`\n`;
+      sql += `  \`readTime\`, \`destaque\`, \`status\`, \`views\`, \`linkedProductIds\`, \`sidebarBanner\`\n`;
       sql += `) VALUES\n`;
       const postRows = blogPosts.map(p => {
         const tagsJson = JSON.stringify(p.tags || []);
         const linkedJson = JSON.stringify(p.linkedProductIds || []);
+        const bannerJson = p.sidebarBanner ? JSON.stringify(p.sidebarBanner) : null;
         return `  (${escapeSql(p.id)}, ${escapeSql(p.storeId || storeId)}, ${escapeSql(p.slug)}, ${escapeSql(p.title)}, ${escapeSql(p.excerpt || '')}, ${escapeSql(p.content || '')}, ${escapeSql(p.coverImage || '')},\n` +
                `   ${escapeSql(p.category || 'Geral')}, ${escapeSql(tagsJson)}, ${escapeSql(p.authorId || null)}, ${escapeSql(p.author || 'Equipe')}, ${escapeSql(p.authorAvatar || '')}, ${escapeSql(p.authorRole || '')}, ${escapeSql(p.authorBio || '')},\n` +
-               `   ${escapeSql(p.readTime || '4 min')}, ${escapeSql(p.destaque ? 1 : 0)}, ${escapeSql(p.status || 'published')}, ${escapeSql(p.views || 0)}, ${escapeSql(linkedJson)})`;
+               `   ${escapeSql(p.readTime || '4 min')}, ${escapeSql(p.destaque ? 1 : 0)}, ${escapeSql(p.status || 'published')}, ${escapeSql(p.views || 0)}, ${escapeSql(linkedJson)}, ${escapeSql(bannerJson)})`;
       });
       sql += postRows.join(',\n') + '\n';
-      sql += `ON DUPLICATE KEY UPDATE \`title\`=VALUES(\`title\`), \`content\`=VALUES(\`content\`), \`coverImage\`=VALUES(\`coverImage\`), \`status\`=VALUES(\`status\`);\n\n`;
+      sql += `ON DUPLICATE KEY UPDATE \`title\`=VALUES(\`title\`), \`content\`=VALUES(\`content\`), \`coverImage\`=VALUES(\`coverImage\`), \`status\`=VALUES(\`status\`), \`sidebarBanner\`=VALUES(\`sidebarBanner\`);\n\n`;
     }
 
     // 9. Blog Settings
@@ -2029,6 +2035,14 @@ class DatabaseManager {
     sql += `  \`footerShowSocial\` tinyint(1) DEFAULT 1,\n`;
     sql += `  \`articleFooterAd\` longtext DEFAULT NULL,\n`;
     sql += `  \`articleFooterAds\` longtext DEFAULT NULL,\n`;
+    sql += `  \`articleSidebarBanner\` longtext DEFAULT NULL,\n`;
+    sql += `  \`sobreNos\` longtext DEFAULT NULL,\n`;
+    sql += `  \`textoDisclosure\` text DEFAULT NULL,\n`;
+    sql += `  \`termosUso\` longtext DEFAULT NULL,\n`;
+    sql += `  \`politicaPrivacidade\` longtext DEFAULT NULL,\n`;
+    sql += `  \`cnpj\` varchar(64) DEFAULT NULL,\n`;
+    sql += `  \`endereco\` text DEFAULT NULL,\n`;
+    sql += `  \`email\` varchar(255) DEFAULT NULL,\n`;
     sql += `  \`updatedAt\` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n`;
     sql += `  PRIMARY KEY (\`id\`),\n`;
     sql += `  UNIQUE KEY \`uniq_blog_settings_slug\` (\`storeSlug\`)\n`;
@@ -2037,6 +2051,7 @@ class DatabaseManager {
     if (curSettings) {
       const singleAdJson = JSON.stringify(curSettings.articleFooterAd || null);
       const adsJson = JSON.stringify(curSettings.articleFooterAds || []);
+      const sidebarBannerJson = JSON.stringify(curSettings.articleSidebarBanner || null);
       sql += `INSERT INTO \`blog_settings\` (\n`;
       sql += `  \`id\`, \`storeSlug\`, \`storeId\`, \`heroBackgroundImage\`, \`heroOverlayOpacity\`,\n`;
       sql += `  \`heroTitle\`, \`heroSubtitle\`, \`heroBadge\`, \`heroShowSearch\`, \`heroSearchPlaceholder\`,\n`;
@@ -2047,7 +2062,8 @@ class DatabaseManager {
       sql += `  \`menuInstitutionalLabel\`, \`menuShowInstitutional\`, \`menuContactLabel\`, \`menuShowContact\`,\n`;
       sql += `  \`menuShowWhatsApp\`, \`menuShowVitrineBtn\`, \`menuVitrineBtnText\`,\n`;
       sql += `  \`showCategoriesBar\`, \`footerText\`, \`footerShowSocial\`,\n`;
-      sql += `  \`articleFooterAd\`, \`articleFooterAds\`\n`;
+      sql += `  \`articleFooterAd\`, \`articleFooterAds\`, \`articleSidebarBanner\`,\n`;
+      sql += `  \`sobreNos\`, \`textoDisclosure\`, \`termosUso\`, \`politicaPrivacidade\`, \`cnpj\`, \`endereco\`, \`email\`\n`;
       sql += `) VALUES (\n`;
       sql += `  ${escapeSql('bs-' + (store?.slug || 'achadinhos-da-maria'))}, ${escapeSql(store?.slug || 'achadinhos-da-maria')}, ${escapeSql(storeId)},\n`;
       sql += `  ${escapeSql(curSettings.heroBackgroundImage || '')}, ${escapeSql(curSettings.heroOverlayOpacity !== undefined ? curSettings.heroOverlayOpacity : 65)},\n`;
@@ -2060,8 +2076,10 @@ class DatabaseManager {
       sql += `  ${escapeSql(curSettings.menuInstitutionalLabel || 'Sobre Nós')}, ${escapeSql(curSettings.menuShowInstitutional !== false ? 1 : 0)}, ${escapeSql(curSettings.menuContactLabel || 'Contato')}, ${escapeSql(curSettings.menuShowContact !== false ? 1 : 0)},\n`;
       sql += `  ${escapeSql(curSettings.menuShowWhatsApp !== false ? 1 : 0)}, ${escapeSql(curSettings.menuShowVitrineBtn !== false ? 1 : 0)}, ${escapeSql(curSettings.menuVitrineBtnText || 'Ir para Vitrine')},\n`;
       sql += `  ${escapeSql(curSettings.showCategoriesBar !== false ? 1 : 0)}, ${escapeSql(curSettings.footerText || '')}, ${escapeSql(curSettings.footerShowSocial !== false ? 1 : 0)},\n`;
-      sql += `  ${escapeSql(singleAdJson)}, ${escapeSql(adsJson)}\n`;
-      sql += `) ON DUPLICATE KEY UPDATE \`heroTitle\`=VALUES(\`heroTitle\`), \`heroBackgroundImage\`=VALUES(\`heroBackgroundImage\`), \`updatedAt\`=NOW();\n\n`;
+      sql += `  ${escapeSql(singleAdJson)}, ${escapeSql(adsJson)}, ${escapeSql(sidebarBannerJson)},\n`;
+      sql += `  ${escapeSql(curSettings.sobreNos || store?.sobreNos || '')}, ${escapeSql(curSettings.textoDisclosure || store?.textoDisclosure || '')}, ${escapeSql(curSettings.termosUso || store?.termosUso || '')}, ${escapeSql(curSettings.politicaPrivacidade || store?.politicaPrivacidade || '')},\n`;
+      sql += `  ${escapeSql(curSettings.cnpj || store?.cnpj || '')}, ${escapeSql(curSettings.endereco || store?.endereco || '')}, ${escapeSql(curSettings.email || store?.email || '')}\n`;
+      sql += `) ON DUPLICATE KEY UPDATE \`heroTitle\`=VALUES(\`heroTitle\`), \`sobreNos\`=VALUES(\`sobreNos\`), \`termosUso\`=VALUES(\`termosUso\`), \`politicaPrivacidade\`=VALUES(\`politicaPrivacidade\`), \`updatedAt\`=NOW();\n\n`;
     }
 
     // 10. Contact Messages
@@ -2091,6 +2109,39 @@ class DatabaseManager {
       sql += msgRows.join(',\n') + '\n';
       sql += `ON DUPLICATE KEY UPDATE \`lida\`=VALUES(\`lida\`);\n\n`;
     }
+
+    // 11. Institutional Pages
+    const instData = this.getInstitutional(store?.slug || 'achadinhos-da-maria');
+    sql += `-- ----------------------------------------------------------\n`;
+    sql += `-- 11. DADOS INSTITUCIONAIS & INFORMAÇÕES LEGAIS (institutional_pages)\n`;
+    sql += `-- ----------------------------------------------------------\n`;
+    sql += `CREATE TABLE IF NOT EXISTS \`institutional_pages\` (\n`;
+    sql += `  \`id\` varchar(64) NOT NULL,\n`;
+    sql += `  \`storeSlug\` varchar(128) NOT NULL,\n`;
+    sql += `  \`storeName\` varchar(255) DEFAULT '',\n`;
+    sql += `  \`cnpj\` varchar(64) DEFAULT '',\n`;
+    sql += `  \`endereco\` text DEFAULT NULL,\n`;
+    sql += `  \`email\` varchar(255) DEFAULT '',\n`;
+    sql += `  \`sobreNos\` longtext DEFAULT NULL,\n`;
+    sql += `  \`textoDisclosure\` text DEFAULT NULL,\n`;
+    sql += `  \`termosUso\` longtext DEFAULT NULL,\n`;
+    sql += `  \`politicaPrivacidade\` longtext DEFAULT NULL,\n`;
+    sql += `  \`updatedAt\` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n`;
+    sql += `  PRIMARY KEY (\`id\`),\n`;
+    sql += `  UNIQUE KEY \`uniq_inst_slug\` (\`storeSlug\`)\n`;
+    sql += `) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n\n`;
+
+    sql += `INSERT INTO \`institutional_pages\` (\n`;
+    sql += `  \`id\`, \`storeSlug\`, \`storeName\`, \`cnpj\`, \`endereco\`, \`email\`,\n`;
+    sql += `  \`sobreNos\`, \`textoDisclosure\`, \`termosUso\`, \`politicaPrivacidade\`\n`;
+    sql += `) VALUES (\n`;
+    sql += `  ${escapeSql(instData.id || ('inst-' + (store?.slug || 'achadinhos-da-maria')))}, ${escapeSql(store?.slug || 'achadinhos-da-maria')}, ${escapeSql(instData.storeName || store?.storeName || 'Meudocelar')},\n`;
+    sql += `  ${escapeSql(instData.cnpj || store?.cnpj || '')}, ${escapeSql(instData.endereco || store?.endereco || '')}, ${escapeSql(instData.email || store?.email || '')},\n`;
+    sql += `  ${escapeSql(instData.sobreNos || store?.sobreNos || '')}, ${escapeSql(instData.textoDisclosure || store?.textoDisclosure || '')},\n`;
+    sql += `  ${escapeSql(instData.termosUso || store?.termosUso || '')}, ${escapeSql(instData.politicaPrivacidade || store?.politicaPrivacidade || '')}\n`;
+    sql += `) ON DUPLICATE KEY UPDATE\n`;
+    sql += `  \`storeName\`=VALUES(\`storeName\`), \`cnpj\`=VALUES(\`cnpj\`), \`endereco\`=VALUES(\`endereco\`), \`email\`=VALUES(\`email\`),\n`;
+    sql += `  \`sobreNos\`=VALUES(\`sobreNos\`), \`textoDisclosure\`=VALUES(\`textoDisclosure\`), \`termosUso\`=VALUES(\`termosUso\`), \`politicaPrivacidade\`=VALUES(\`politicaPrivacidade\`), \`updatedAt\`=NOW();\n\n`;
 
     sql += `SET FOREIGN_KEY_CHECKS = 1;\n`;
     sql += `-- Fim do dump SQL para Hostinger\n`;
@@ -2533,6 +2584,91 @@ class DatabaseManager {
   }
 
   // ============================================
+  // INSTITUTIONAL PAGES METHODS
+  // ============================================
+
+  public getInstitutional(storeSlug: string): InstitutionalData {
+    if (!this.data.institutionalPages) {
+      this.data.institutionalPages = {};
+    }
+    const store = this.getStoreBySlug(storeSlug);
+    const blog = this.getBlogSettings(storeSlug);
+
+    const existing = this.data.institutionalPages[storeSlug];
+
+    return {
+      id: existing?.id || `inst-${storeSlug}`,
+      storeSlug,
+      storeName: existing?.storeName || store?.storeName || 'Meu Doce Lar',
+      cnpj: existing?.cnpj || store?.cnpj || blog?.cnpj || '',
+      endereco: existing?.endereco || store?.endereco || blog?.endereco || '',
+      email: existing?.email || store?.email || blog?.email || '',
+      sobreNos: existing?.sobreNos || store?.sobreNos || blog?.sobreNos || '',
+      textoDisclosure: existing?.textoDisclosure || store?.textoDisclosure || blog?.textoDisclosure || '',
+      termosUso: existing?.termosUso || store?.termosUso || blog?.termosUso || '',
+      politicaPrivacidade: existing?.politicaPrivacidade || store?.politicaPrivacidade || blog?.politicaPrivacidade || '',
+      updatedAt: existing?.updatedAt || new Date().toISOString()
+    };
+  }
+
+  public updateInstitutional(storeSlug: string, updates: Partial<InstitutionalData>): InstitutionalData {
+    if (!this.data.institutionalPages) {
+      this.data.institutionalPages = {};
+    }
+    const current = this.getInstitutional(storeSlug);
+    const updated: InstitutionalData = {
+      ...current,
+      ...updates,
+      storeSlug,
+      id: current.id || `inst-${storeSlug}`,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.data.institutionalPages[storeSlug] = updated;
+
+    // Synchronize to stores array
+    const storeIdx = this.data.stores.findIndex(s => s.slug === storeSlug);
+    if (storeIdx !== -1) {
+      this.data.stores[storeIdx] = {
+        ...this.data.stores[storeIdx],
+        storeName: updated.storeName || this.data.stores[storeIdx].storeName,
+        cnpj: updated.cnpj,
+        endereco: updated.endereco,
+        email: updated.email,
+        sobreNos: updated.sobreNos,
+        textoDisclosure: updated.textoDisclosure,
+        termosUso: updated.termosUso,
+        politicaPrivacidade: updated.politicaPrivacidade,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    // Synchronize to blogSettings
+    if (!this.data.blogSettings) this.data.blogSettings = {};
+    const currentBlog = this.getBlogSettings(storeSlug);
+    this.data.blogSettings[storeSlug] = {
+      ...currentBlog,
+      sobreNos: updated.sobreNos,
+      textoDisclosure: updated.textoDisclosure,
+      termosUso: updated.termosUso,
+      politicaPrivacidade: updated.politicaPrivacidade,
+      cnpj: updated.cnpj,
+      endereco: updated.endereco,
+      email: updated.email,
+      updatedAt: new Date().toISOString()
+    };
+
+    this.saveData();
+
+    // Direct persistence to MySQL
+    mysqlManager.saveInstitutional(updated).catch(err => {
+      console.error('[Hostinger MySQL] Erro ao salvar dados institucionais no MySQL:', err);
+    });
+
+    return updated;
+  }
+
+  // ============================================
   // BLOG CATEGORIES METHODS
   // ============================================
 
@@ -2748,11 +2884,25 @@ class DatabaseManager {
     blogEditors?: BlogEditor[];
     blogSettings?: Record<string, BlogSettings>;
     messages?: ContactMessage[];
+    institutional?: Record<string, InstitutionalData>;
   }) {
     if (!mysqlData) return;
     let hasChanges = false;
     if (Array.isArray(mysqlData.stores) && mysqlData.stores.length > 0) {
-      this.data.stores = mysqlData.stores;
+      this.data.stores = mysqlData.stores.map(ms => {
+        const existing = this.data.stores.find(s => s.slug === ms.slug || s.id === ms.id);
+        return {
+          ...existing,
+          ...ms,
+          sobreNos: ms.sobreNos || existing?.sobreNos || '',
+          textoDisclosure: ms.textoDisclosure || existing?.textoDisclosure || '',
+          termosUso: ms.termosUso || existing?.termosUso || '',
+          politicaPrivacidade: ms.politicaPrivacidade || existing?.politicaPrivacidade || '',
+          cnpj: ms.cnpj || existing?.cnpj || '',
+          endereco: ms.endereco || existing?.endereco || '',
+          email: ms.email || existing?.email || ''
+        };
+      });
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.products) && mysqlData.products.length > 0) {
@@ -2784,14 +2934,35 @@ class DatabaseManager {
       hasChanges = true;
     }
     if (mysqlData.blogSettings && Object.keys(mysqlData.blogSettings).length > 0) {
-      this.data.blogSettings = {
-        ...this.data.blogSettings,
-        ...mysqlData.blogSettings
-      };
+      if (!this.data.blogSettings) this.data.blogSettings = {};
+      for (const [slug, mSettings] of Object.entries(mysqlData.blogSettings)) {
+        const existing = this.data.blogSettings[slug];
+        this.data.blogSettings[slug] = {
+          ...existing,
+          ...mSettings,
+          sobreNos: mSettings.sobreNos || existing?.sobreNos || '',
+          textoDisclosure: mSettings.textoDisclosure || existing?.textoDisclosure || '',
+          termosUso: mSettings.termosUso || existing?.termosUso || '',
+          politicaPrivacidade: mSettings.politicaPrivacidade || existing?.politicaPrivacidade || '',
+          cnpj: mSettings.cnpj || existing?.cnpj || '',
+          endereco: mSettings.endereco || existing?.endereco || '',
+          email: mSettings.email || existing?.email || ''
+        };
+      }
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.messages) && mysqlData.messages.length > 0) {
       this.data.messages = mysqlData.messages;
+      hasChanges = true;
+    }
+    if (mysqlData.institutional && Object.keys(mysqlData.institutional).length > 0) {
+      if (!this.data.institutionalPages) this.data.institutionalPages = {};
+      for (const [slug, inst] of Object.entries(mysqlData.institutional)) {
+        this.data.institutionalPages[slug] = {
+          ...this.data.institutionalPages[slug],
+          ...inst
+        };
+      }
       hasChanges = true;
     }
     if (hasChanges) {

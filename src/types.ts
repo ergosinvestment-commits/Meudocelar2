@@ -418,3 +418,18 @@ export interface ContactMessage {
   [key: string]: any;
 }
 
+export interface InstitutionalData {
+  id?: string;
+  storeSlug: string;
+  storeName?: string;
+  cnpj?: string;
+  endereco?: string;
+  email?: string;
+  sobreNos?: string;
+  textoDisclosure?: string;
+  termosUso?: string;
+  politicaPrivacidade?: string;
+  updatedAt?: string;
+  [key: string]: any;
+}
+

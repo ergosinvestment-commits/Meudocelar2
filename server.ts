@@ -209,6 +209,13 @@ async function startServer() {
     res.json(editors);
   });
 
+  // Get Public Institutional Data
+  app.get(['/api/store/:slug/institutional', '/api/public/store/:slug/institutional'], (req, res) => {
+    const slug = req.params.slug || 'achadinhos-da-maria';
+    const data = db.getInstitutional(slug);
+    res.json(data);
+  });
+
   // Send Contact Message
   app.post('/api/store/:slug/contact', (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
@@ -629,6 +636,46 @@ async function startServer() {
     res.json(updated);
   });
 
+  // Get institutional data (admin)
+  app.get('/api/admin/store/:slug/institutional', (req, res) => {
+    const slug = req.params.slug || 'achadinhos-da-maria';
+    const data = db.getInstitutional(slug);
+    res.json(data);
+  });
+
+  // Update institutional data (admin - persists directly to MySQL institutional_pages, stores, and blog_settings)
+  app.put('/api/admin/store/:slug/institutional', async (req, res) => {
+    try {
+      const slug = req.params.slug || 'achadinhos-da-maria';
+      const updated = db.updateInstitutional(slug, req.body);
+      let mysqlSaved = false;
+      let mysqlError: string | null = null;
+
+      if (mysqlManager.isLive()) {
+        try {
+          mysqlSaved = await mysqlManager.saveInstitutional(updated);
+        } catch (mErr: any) {
+          mysqlError = mErr?.message || 'Erro ao persistir no MySQL';
+          console.error('[Admin SaveInstitutional MySQL Error]', mErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        data: updated,
+        mysqlSaved,
+        mysqlError,
+        message: 'Dados institucionais salvos com sucesso!'
+      });
+    } catch (err: any) {
+      console.error('[Admin SaveInstitutional Server Error]', err);
+      res.status(500).json({
+        success: false,
+        error: err?.message || 'Erro ao salvar dados institucionais'
+      });
+    }
+  });
+
   // Get all blog categories (admin)
   app.get('/api/admin/store/:slug/blog-categories', (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
@@ -930,6 +977,42 @@ async function startServer() {
       return res.status(500).json({
         success: false,
         message: `Erro ao criar tabelas do blog: ${err?.message || 'Erro desconhecido'}`
+      });
+    }
+  });
+
+  // Ensure Institutional Table and columns exist, and synchronize institutional data directly to MySQL
+  app.post('/api/admin/database/ensure-institutional-table', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    try {
+      const slug = (req.body?.slug as string) || 'achadinhos-da-maria';
+
+      // 1. Create table institutional_pages & add columns to stores and blog_settings
+      const tableResult = await mysqlManager.ensureInstitutionalTableExist();
+
+      // 2. Sync current institutional data from memory into MySQL
+      let syncSaved = false;
+      if (mysqlManager.isLive()) {
+        const instData = db.getInstitutional(slug);
+        syncSaved = await mysqlManager.saveInstitutional(instData);
+      }
+
+      const diag = await mysqlManager.getLiveDiagnostics();
+
+      return res.json({
+        success: tableResult.success,
+        tableResult,
+        syncSaved,
+        diagnostics: diag,
+        message: tableResult.success
+          ? 'Tabela institutional_pages e colunas validadas e sincronizadas com sucesso no MySQL da Hostinger!'
+          : tableResult.message
+      });
+    } catch (err: any) {
+      console.error('[MySQL Ensure Institutional Table Error]', err);
+      return res.status(500).json({
+        success: false,
+        message: `Erro ao validar tabela institucional: ${err?.message || 'Erro desconhecido'}`
       });
     }
   });

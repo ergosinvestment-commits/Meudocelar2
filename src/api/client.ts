@@ -12,7 +12,8 @@ import {
   ContactMessage,
   BlogCategory,
   BlogEditor,
-  BlogSettings
+  BlogSettings,
+  InstitutionalData
 } from '../types';
 import {
   FALLBACK_STORE_CONFIG,
@@ -841,6 +842,64 @@ export async function fetchBlogSqlScript(slug: string = 'achadinhos-da-maria'): 
   });
   return await res.text();
 }
+
+// ============================================
+// INSTITUTIONAL PAGES & LEGAL INFO API
+// ============================================
+
+export async function fetchPublicInstitutional(slug: string = 'achadinhos-da-maria'): Promise<InstitutionalData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/store/${slug}/institutional?_t=${Date.now()}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAdminInstitutional(slug: string = 'achadinhos-da-maria'): Promise<InstitutionalData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/admin/store/${slug}/institutional?_t=${Date.now()}`, {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function saveAdminInstitutional(
+  slug: string = 'achadinhos-da-maria',
+  data: Partial<InstitutionalData>
+): Promise<{ success: boolean; data: InstitutionalData; mysqlSaved: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/admin/store/${slug}/institutional`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData?.error || 'Falha ao salvar dados institucionais no servidor');
+  }
+  return await res.json();
+}
+
+export async function ensureInstitutionalTableInMySql(slug: string = 'achadinhos-da-maria'): Promise<{
+  success: boolean;
+  message: string;
+  tableResult?: any;
+  syncSaved?: boolean;
+  diagnostics?: any;
+}> {
+  const res = await fetch(`${API_BASE}/admin/database/ensure-institutional-table`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ slug })
+  });
+  return await res.json();
+}
+
 
 
 

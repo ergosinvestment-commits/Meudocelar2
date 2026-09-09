@@ -72,25 +72,9 @@ export default function ArticleView({
         setBlogSettings(e.detail);
       }
     }
-    function handlePostUpdated(e: any) {
-      if (e?.detail) {
-        const updated = e.detail;
-        setAllPosts(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
-      }
-    }
     window.addEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
-    window.addEventListener('blog-posts-updated', handlePostUpdated as EventListener);
-    window.addEventListener('blog-post-updated', handlePostUpdated as EventListener);
-    return () => {
-      window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
-      window.removeEventListener('blog-posts-updated', handlePostUpdated as EventListener);
-      window.removeEventListener('blog-post-updated', handlePostUpdated as EventListener);
-    };
+    return () => window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
   }, []);
-
-  const currentPost = useMemo(() => {
-    return allPosts.find(p => p.id === post.id) || post;
-  }, [allPosts, post]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -926,42 +910,62 @@ export default function ArticleView({
             {/* 2. Vertical Sidebar Banner Card (Strictly Per Article) */}
             {(() => {
               // Exibe ESTRITAMENTE se este artigo específico tiver um banner configurado e ativo
-              const banner = (currentPost.sidebarBanner?.enabled !== false && Boolean(currentPost.sidebarBanner?.imageUrl))
-                ? currentPost.sidebarBanner
+              const currentLivePost = allPosts.find(p => p.id === post.id || p.slug === post.slug) || post;
+              const banner = (currentLivePost.sidebarBanner?.enabled && currentLivePost.sidebarBanner?.imageUrl)
+                ? currentLivePost.sidebarBanner
                 : null;
 
               if (!banner?.imageUrl) return null;
 
               return (
                 <div className="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden group">
-                  <div className="relative bg-neutral-950 overflow-hidden flex flex-col">
+                  <div className="relative h-80 sm:h-96 bg-neutral-950 overflow-hidden flex flex-col justify-end">
                     <a
                       href={banner.linkUrl || '#'}
                       target={banner.openInNewTab !== false ? '_blank' : '_self'}
                       rel="noopener noreferrer"
-                      className="block w-full"
+                      className="absolute inset-0 block w-full h-full"
                     >
                       <img
                         src={normalizeImageUrl(banner.imageUrl)}
-                        alt={banner.altText || banner.title || currentPost.title || 'Banner Lateral'}
+                        alt={banner.altText || banner.title || post.title || 'Banner Lateral'}
                         referrerPolicy="no-referrer"
-                        className="w-full h-auto object-cover object-center group-hover:scale-102 transition-transform duration-300"
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                       />
+                      <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/80 via-transparent to-transparent pointer-events-none" />
                     </a>
 
-                    {(banner.buttonText || banner.linkUrl) && (
-                      <div className="p-4 bg-white border-t border-neutral-100">
+                    {banner.badge ? (
+                      <div className="absolute top-3 left-3 z-10 pointer-events-none">
+                        <span className="px-2.5 py-1 bg-amber-500 text-neutral-950 text-[10px] font-black tracking-widest uppercase rounded-md shadow-md">
+                          {banner.badge}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    <div className="relative z-10 p-4 sm:p-5 space-y-2 pointer-events-auto">
+                      {banner.title ? (
+                        <h4 className="text-sm sm:text-base font-extrabold text-white leading-tight drop-shadow-sm">
+                          {banner.title}
+                        </h4>
+                      ) : null}
+                      {banner.description ? (
+                        <p className="text-xs text-neutral-200 line-clamp-3 leading-relaxed drop-shadow-xs">
+                          {banner.description}
+                        </p>
+                      ) : null}
+                      {banner.linkUrl && (
                         <a
-                          href={banner.linkUrl || '#'}
+                          href={banner.linkUrl}
                           target={banner.openInNewTab !== false ? '_blank' : '_self'}
                           rel="noopener noreferrer"
-                          className="w-full py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-neutral-950 text-xs font-black rounded-xl transition shadow-xs flex items-center justify-center gap-1.5"
+                          className="w-full py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-neutral-950 text-xs font-black rounded-xl transition shadow-md flex items-center justify-center gap-1.5 mt-2"
                         >
                           <span>{banner.buttonText || 'Quero Conhecer →'}</span>
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               );

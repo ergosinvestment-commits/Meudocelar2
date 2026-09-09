@@ -12,7 +12,8 @@ import {
   BlogCategory,
   BlogEditor,
   BlogSettings,
-  ContactMessage
+  ContactMessage,
+  InstitutionalData
 } from '../types';
 import {
   FALLBACK_BLOG_POSTS,
@@ -257,7 +258,8 @@ class MySqlManager {
       blog_categories: 0,
       blog_editors: 0,
       blog_settings: 0,
-      contact_messages: 0
+      contact_messages: 0,
+      institutional_pages: 0
     };
 
     let latencyMs = 0;
@@ -288,6 +290,7 @@ class MySqlManager {
         counts.blog_editors = await countTable('blog_editors');
         counts.blog_settings = await countTable('blog_settings');
         counts.contact_messages = await countTable('contact_messages');
+        counts.institutional_pages = await countTable('institutional_pages');
       } catch (err: any) {
         console.warn('[Hostinger MySQL] Erro ao obter contagens das tabelas:', err);
       }
@@ -595,28 +598,63 @@ class MySqlManager {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `;
 
-    await this.pool.query(createStoresTable);
-    await this.pool.query(createProductsTable);
-    await this.pool.query(createCategoriesTable);
-    await this.pool.query(createPlatformsTable);
-    await this.pool.query(createClicksTable);
-    await this.pool.query(createStoreViewsTable);
-    await this.pool.query(createUsersTable);
-    await this.pool.query(createBlogPostsTable);
-    await this.pool.query(createBlogCategoriesTable);
-    await this.pool.query(createBlogEditorsTable);
-    await this.pool.query(createBlogSettingsTable);
-    await this.pool.query(createContactMessagesTable);
+    const createInstitutionalTable = `
+      CREATE TABLE IF NOT EXISTS institutional_pages (
+        id VARCHAR(64) PRIMARY KEY,
+        storeSlug VARCHAR(128) NOT NULL UNIQUE,
+        storeName VARCHAR(255) DEFAULT '',
+        cnpj VARCHAR(64) DEFAULT '',
+        endereco TEXT,
+        email VARCHAR(255) DEFAULT '',
+        sobreNos LONGTEXT,
+        textoDisclosure TEXT,
+        termosUso LONGTEXT,
+        politicaPrivacidade LONGTEXT,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `;
+
+    const tablesToCreate = [
+      { name: 'stores', sql: createStoresTable },
+      { name: 'products', sql: createProductsTable },
+      { name: 'categories', sql: createCategoriesTable },
+      { name: 'platforms', sql: createPlatformsTable },
+      { name: 'clicks', sql: createClicksTable },
+      { name: 'store_views', sql: createStoreViewsTable },
+      { name: 'users', sql: createUsersTable },
+      { name: 'blog_posts', sql: createBlogPostsTable },
+      { name: 'blog_categories', sql: createBlogCategoriesTable },
+      { name: 'blog_editors', sql: createBlogEditorsTable },
+      { name: 'blog_settings', sql: createBlogSettingsTable },
+      { name: 'contact_messages', sql: createContactMessagesTable },
+      { name: 'institutional_pages', sql: createInstitutionalTable }
+    ];
+
+    for (const t of tablesToCreate) {
+      try {
+        await this.pool.query(t.sql);
+      } catch (tErr: any) {
+        console.warn(`[Hostinger MySQL] Aviso ao criar tabela ${t.name}:`, tErr?.message || tErr);
+      }
+    }
 
     // Auto-migration for institutional fields on existing MySQL tables
     const migrations = [
       'ALTER TABLE stores ADD COLUMN IF NOT EXISTS sobreNos LONGTEXT',
       'ALTER TABLE stores ADD COLUMN IF NOT EXISTS termosUso LONGTEXT',
       'ALTER TABLE stores ADD COLUMN IF NOT EXISTS politicaPrivacidade LONGTEXT',
+      'ALTER TABLE stores ADD COLUMN IF NOT EXISTS textoDisclosure TEXT',
+      'ALTER TABLE stores ADD COLUMN IF NOT EXISTS cnpj VARCHAR(64)',
+      'ALTER TABLE stores ADD COLUMN IF NOT EXISTS endereco TEXT',
+      'ALTER TABLE stores ADD COLUMN IF NOT EXISTS email VARCHAR(255)',
+      'ALTER TABLE stores ADD COLUMN IF NOT EXISTS avisoPrecos TEXT',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS sobreNos LONGTEXT',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS textoDisclosure TEXT',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS termosUso LONGTEXT',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS politicaPrivacidade LONGTEXT',
+      'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS cnpj VARCHAR(64)',
+      'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS endereco TEXT',
+      'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS email VARCHAR(255)',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS articleSidebarBanner LONGTEXT',
       'ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS sidebarBanner LONGTEXT'
     ];
@@ -630,6 +668,81 @@ class MySqlManager {
           await this.pool.query(rawMig);
         } catch {}
       }
+    }
+  }
+
+  /**
+   * Explicitly ensures and validates that institutional_pages table exists in Hostinger MySQL,
+   * along with all institutional columns on stores and blog_settings tables.
+   */
+  public async ensureInstitutionalTableExist(): Promise<{ success: boolean; message: string; table: string }> {
+    if (!this.pool || !this.isConnected) {
+      return {
+        success: false,
+        message: 'MySQL não está conectado. Configure os dados de conexão na aba Banco de Dados.',
+        table: 'institutional_pages'
+      };
+    }
+
+    try {
+      // 1. Create dedicated institutional_pages table
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS institutional_pages (
+          id VARCHAR(64) PRIMARY KEY,
+          storeSlug VARCHAR(128) NOT NULL UNIQUE,
+          storeName VARCHAR(255) DEFAULT '',
+          cnpj VARCHAR(64) DEFAULT '',
+          endereco TEXT,
+          email VARCHAR(255) DEFAULT '',
+          sobreNos LONGTEXT,
+          textoDisclosure TEXT,
+          termosUso LONGTEXT,
+          politicaPrivacidade LONGTEXT,
+          updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+
+      // 2. Ensure institutional columns exist on stores and blog_settings
+      const colsToAdd = [
+        { table: 'stores', col: 'sobreNos', type: 'LONGTEXT' },
+        { table: 'stores', col: 'termosUso', type: 'LONGTEXT' },
+        { table: 'stores', col: 'politicaPrivacidade', type: 'LONGTEXT' },
+        { table: 'stores', col: 'textoDisclosure', type: 'TEXT' },
+        { table: 'stores', col: 'cnpj', type: 'VARCHAR(64)' },
+        { table: 'stores', col: 'endereco', type: 'TEXT' },
+        { table: 'stores', col: 'email', type: 'VARCHAR(255)' },
+        { table: 'stores', col: 'avisoPrecos', type: 'TEXT' },
+        { table: 'blog_settings', col: 'sobreNos', type: 'LONGTEXT' },
+        { table: 'blog_settings', col: 'textoDisclosure', type: 'TEXT' },
+        { table: 'blog_settings', col: 'termosUso', type: 'LONGTEXT' },
+        { table: 'blog_settings', col: 'politicaPrivacidade', type: 'LONGTEXT' },
+        { table: 'blog_settings', col: 'cnpj', type: 'VARCHAR(64)' },
+        { table: 'blog_settings', col: 'endereco', type: 'TEXT' },
+        { table: 'blog_settings', col: 'email', type: 'VARCHAR(255)' }
+      ];
+
+      for (const item of colsToAdd) {
+        try {
+          await this.pool.query(`ALTER TABLE \`${item.table}\` ADD COLUMN IF NOT EXISTS \`${item.col}\` ${item.type}`);
+        } catch {
+          try {
+            await this.pool.query(`ALTER TABLE \`${item.table}\` ADD COLUMN \`${item.col}\` ${item.type}`);
+          } catch {}
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Tabela institutional_pages e colunas institucionais validadas com sucesso no MySQL da Hostinger!',
+        table: 'institutional_pages'
+      };
+    } catch (err: any) {
+      console.error('[Hostinger MySQL] Erro ao validar tabela institucional:', err);
+      return {
+        success: false,
+        message: `Falha ao validar tabela institucional: ${err?.message || 'Erro desconhecido'}`,
+        table: 'institutional_pages'
+      };
     }
   }
 
@@ -1000,58 +1113,79 @@ class MySqlManager {
       const isPublished = p.published !== false ? 1 : 0;
       const isDestaque = p.destaque ? 1 : 0;
 
-      await this.pool.query(`
-        INSERT INTO blog_posts (
-          id, storeId, slug, title, excerpt, content, category,
-          coverImage, tags, authorId, author, authorAvatar, authorRole, authorBio,
-          readTime, published, destaque, status, views, linkedProductIds, sidebarBanner, publishedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          slug=VALUES(slug),
-          title=VALUES(title),
-          excerpt=VALUES(excerpt),
-          content=VALUES(content),
-          category=VALUES(category),
-          coverImage=VALUES(coverImage),
-          tags=VALUES(tags),
-          authorId=VALUES(authorId),
-          author=VALUES(author),
-          authorAvatar=VALUES(authorAvatar),
-          authorRole=VALUES(authorRole),
-          authorBio=VALUES(authorBio),
-          readTime=VALUES(readTime),
-          published=VALUES(published),
-          destaque=VALUES(destaque),
-          status=VALUES(status),
-          views=VALUES(views),
-          linkedProductIds=VALUES(linkedProductIds),
-          sidebarBanner=VALUES(sidebarBanner),
-          publishedAt=VALUES(publishedAt),
-          updatedAt=CURRENT_TIMESTAMP
-      `, [
-        p.id,
-        p.storeId || 'store-1',
-        p.slug,
-        p.title,
-        p.excerpt || '',
-        p.content || '',
-        p.category || 'Geral',
-        p.coverImage || '',
-        tags,
-        p.authorId || '',
-        p.author || 'Equipe',
-        p.authorAvatar || '',
-        p.authorRole || '',
-        p.authorBio || '',
-        p.readTime || '4 min',
-        isPublished,
-        isDestaque,
-        p.status || (isPublished ? 'published' : 'draft'),
-        p.views || 0,
-        linked,
-        sidebarBanner,
-        p.publishedAt ? new Date(p.publishedAt) : new Date()
-      ]);
+      const executeSave = async () => {
+        await this.pool!.query(`
+          INSERT INTO blog_posts (
+            id, storeId, slug, title, excerpt, content, category,
+            coverImage, tags, authorId, author, authorAvatar, authorRole, authorBio,
+            readTime, published, destaque, status, views, linkedProductIds, sidebarBanner, publishedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            slug=VALUES(slug),
+            title=VALUES(title),
+            excerpt=VALUES(excerpt),
+            content=VALUES(content),
+            category=VALUES(category),
+            coverImage=VALUES(coverImage),
+            tags=VALUES(tags),
+            authorId=VALUES(authorId),
+            author=VALUES(author),
+            authorAvatar=VALUES(authorAvatar),
+            authorRole=VALUES(authorRole),
+            authorBio=VALUES(authorBio),
+            readTime=VALUES(readTime),
+            published=VALUES(published),
+            destaque=VALUES(destaque),
+            status=VALUES(status),
+            views=VALUES(views),
+            linkedProductIds=VALUES(linkedProductIds),
+            sidebarBanner=VALUES(sidebarBanner),
+            publishedAt=VALUES(publishedAt),
+            updatedAt=CURRENT_TIMESTAMP
+        `, [
+          p.id,
+          p.storeId || 'store-1',
+          p.slug,
+          p.title,
+          p.excerpt || '',
+          p.content || '',
+          p.category || 'Geral',
+          p.coverImage || '',
+          tags,
+          p.authorId || '',
+          p.author || 'Equipe',
+          p.authorAvatar || '',
+          p.authorRole || '',
+          p.authorBio || '',
+          p.readTime || '4 min',
+          isPublished,
+          isDestaque,
+          p.status || (isPublished ? 'published' : 'draft'),
+          p.views || 0,
+          linked,
+          sidebarBanner,
+          p.publishedAt ? new Date(p.publishedAt) : new Date()
+        ]);
+      };
+
+      try {
+        await executeSave();
+      } catch (saveErr: any) {
+        // If column sidebarBanner is missing, add it and retry once
+        if (saveErr?.message && (saveErr.message.includes('sidebarBanner') || saveErr.message.includes('Unknown column'))) {
+          console.warn('[Hostinger MySQL] Coluna sidebarBanner ausente em blog_posts, adicionando coluna e tentando novamente...');
+          try {
+            await this.pool!.query('ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS sidebarBanner LONGTEXT');
+          } catch {
+            try {
+              await this.pool!.query('ALTER TABLE blog_posts ADD COLUMN sidebarBanner LONGTEXT');
+            } catch {}
+          }
+          await executeSave();
+        } else {
+          throw saveErr;
+        }
+      }
     } catch (err) {
       console.error('[Hostinger MySQL] Erro ao salvar artigo no MySQL:', err);
     }
@@ -1386,6 +1520,107 @@ class MySqlManager {
     }
   }
 
+  public async saveInstitutional(data: InstitutionalData): Promise<boolean> {
+    if (!this.pool || !this.isConnected) return false;
+    const storeSlug = data.storeSlug || 'achadinhos-da-maria';
+    const id = data.id || `inst-${storeSlug}`;
+
+    const executeInsert = async () => {
+      await this.pool!.query(`
+        INSERT INTO institutional_pages (
+          id, storeSlug, storeName, cnpj, endereco, email, sobreNos, textoDisclosure, termosUso, politicaPrivacidade
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          storeName=VALUES(storeName),
+          cnpj=VALUES(cnpj),
+          endereco=VALUES(endereco),
+          email=VALUES(email),
+          sobreNos=VALUES(sobreNos),
+          textoDisclosure=VALUES(textoDisclosure),
+          termosUso=VALUES(termosUso),
+          politicaPrivacidade=VALUES(politicaPrivacidade),
+          updatedAt=CURRENT_TIMESTAMP
+      `, [
+        id,
+        storeSlug,
+        data.storeName || '',
+        data.cnpj || '',
+        data.endereco || '',
+        data.email || '',
+        data.sobreNos || '',
+        data.textoDisclosure || '',
+        data.termosUso || '',
+        data.politicaPrivacidade || ''
+      ]);
+    };
+
+    try {
+      await executeInsert();
+    } catch (err: any) {
+      console.warn('[Hostinger MySQL] Erro inicial ao salvar institutional_pages, reparando tabelas...', err?.message);
+      await this.ensureInstitutionalTableExist();
+      try {
+        await executeInsert();
+      } catch (retryErr: any) {
+        console.error('[Hostinger MySQL] Erro persistente ao salvar institutional_pages:', retryErr);
+        return false;
+      }
+    }
+
+    // Cross-update stores table
+    try {
+      await this.pool.query(`
+        UPDATE stores SET
+          storeName = COALESCE(NULLIF(?, ''), storeName),
+          cnpj = ?,
+          endereco = ?,
+          email = ?,
+          sobreNos = ?,
+          textoDisclosure = ?,
+          termosUso = ?,
+          politicaPrivacidade = ?,
+          updatedAt = CURRENT_TIMESTAMP
+        WHERE slug = ? OR id = ?
+      `, [
+        data.storeName || '',
+        data.cnpj || '',
+        data.endereco || '',
+        data.email || '',
+        data.sobreNos || '',
+        data.textoDisclosure || '',
+        data.termosUso || '',
+        data.politicaPrivacidade || '',
+        storeSlug,
+        data.storeId || 'store-1'
+      ]);
+    } catch (errStore) {
+      console.warn('[Hostinger MySQL] Aviso ao atualizar colunas institucionais em stores:', errStore);
+    }
+
+    // Cross-update blog_settings table
+    try {
+      await this.pool.query(`
+        UPDATE blog_settings SET
+          sobreNos = ?,
+          textoDisclosure = ?,
+          termosUso = ?,
+          politicaPrivacidade = ?,
+          updatedAt = CURRENT_TIMESTAMP
+        WHERE storeSlug = ?
+      `, [
+        data.sobreNos || '',
+        data.textoDisclosure || '',
+        data.termosUso || '',
+        data.politicaPrivacidade || '',
+        storeSlug
+      ]);
+    } catch (errBlog) {
+      console.warn('[Hostinger MySQL] Aviso ao atualizar colunas institucionais em blog_settings:', errBlog);
+    }
+
+    return true;
+  }
+
   public async syncBlogData(data: {
     storeSlug: string;
     posts: BlogPost[];
@@ -1662,6 +1897,32 @@ class MySqlManager {
         }
       } catch (err) {
         console.warn('[Hostinger MySQL] Tabela contact_messages não encontrada:', err);
+      }
+
+      // 11. Institutional Pages
+      try {
+        const [instRows]: any = await this.pool.query('SELECT * FROM institutional_pages');
+        if (Array.isArray(instRows) && instRows.length > 0) {
+          const instMap: Record<string, InstitutionalData> = {};
+          for (const row of instRows) {
+            instMap[row.storeSlug] = {
+              id: row.id,
+              storeSlug: row.storeSlug,
+              storeName: row.storeName || '',
+              cnpj: row.cnpj || '',
+              endereco: row.endereco || '',
+              email: row.email || '',
+              sobreNos: row.sobreNos || '',
+              textoDisclosure: row.textoDisclosure || '',
+              termosUso: row.termosUso || '',
+              politicaPrivacidade: row.politicaPrivacidade || '',
+              updatedAt: row.updatedAt
+            };
+          }
+          result.institutional = instMap;
+        }
+      } catch (err) {
+        console.warn('[Hostinger MySQL] Tabela institutional_pages não encontrada:', err);
       }
 
       return result;
