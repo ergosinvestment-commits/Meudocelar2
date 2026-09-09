@@ -528,16 +528,31 @@ export default function ArticleView({
             ) : activeAd.type === 'product' ? (
               /* PRODUTO DA LOJA COM LINK DIRETO */
               (() => {
-                const linkedProduct = allProducts.find(p => p.id === activeAd.productId);
-                const directLink = activeAd.bannerLinkUrl || activeAd.link || linkedProduct?.linkAfiliado || '#';
-                const prodImg = activeAd.bannerImageUrl || activeAd.imageUrl || linkedProduct?.img1 || '';
-                const prodTitle = activeAd.title || linkedProduct?.nome || 'Oferta em Destaque';
-                const prodBadge = activeAd.bannerBadge || (linkedProduct?.plataforma ? `ACHADINHO NA ${linkedProduct.plataforma.toUpperCase()}` : 'OFERTA DA LOJA');
-                const prodBtn = activeAd.bannerButtonText || activeAd.buttonText || (linkedProduct?.plataforma ? `Ver Oferta na ${linkedProduct.plataforma} →` : 'Aproveitar Oferta →');
-                const regPrice = activeAd.productPrice ?? linkedProduct?.preco;
-                const promoPrice = activeAd.productPromoPrice ?? linkedProduct?.precoPromo;
+                const articleCat = (post.category || '').trim().toLowerCase();
+                const catProducts = allProducts.filter(p => {
+                  if (p.ativo === false) return false;
+                  const pCat = (p.categoria || '').trim().toLowerCase();
+                  return pCat === articleCat || normalizeCategoryString(pCat) === normalizeCategoryString(articleCat);
+                });
+
+                let selectedProduct = null;
+                if (catProducts.length > 0) {
+                  const hash = (post.id || '1').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                  const index = hash % catProducts.length;
+                  selectedProduct = catProducts[index];
+                } else {
+                  selectedProduct = allProducts.find(p => p.id === activeAd.productId) || null;
+                }
+
+                const directLink = selectedProduct?.linkAfiliado || activeAd.bannerLinkUrl || activeAd.link || '#';
+                const prodImg = selectedProduct?.img1 || activeAd.bannerImageUrl || activeAd.imageUrl || '';
+                const prodTitle = selectedProduct?.nome || activeAd.title || 'Oferta em Destaque';
+                const prodBadge = activeAd.bannerBadge || (selectedProduct?.plataforma ? `ACHADINHO NA ${selectedProduct.plataforma.toUpperCase()}` : 'OFERTA DA LOJA');
+                const prodBtn = activeAd.bannerButtonText || activeAd.buttonText || (selectedProduct?.plataforma ? `Ver Oferta na ${selectedProduct.plataforma} →` : 'Aproveitar Oferta →');
+                const regPrice = selectedProduct?.preco ?? activeAd.productPrice;
+                const promoPrice = selectedProduct?.precoPromo ?? activeAd.productPromoPrice;
                 const hasPromo = promoPrice && regPrice && promoPrice < regPrice;
-                const coupon = activeAd.productCoupon || linkedProduct?.cupom;
+                const coupon = selectedProduct?.cupom || activeAd.productCoupon;
 
                 return (
                   <a

@@ -24,6 +24,8 @@ async function startServer() {
       console.log('[Hostinger MySQL] Conexão ativa com o banco de dados MySQL.');
       try {
         await mysqlManager.createTablesIfNotExist();
+        await mysqlManager.ensureBlogTablesExist();
+        await mysqlManager.ensureInstitutionalTableExist();
         const mysqlData = await mysqlManager.loadAllDataFromMySql();
         if (mysqlData) {
           db.hydrateFromMySql(mysqlData);

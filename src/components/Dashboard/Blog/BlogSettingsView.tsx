@@ -203,6 +203,35 @@ export default function BlogSettingsView({
   const [instActiveTab, setInstActiveTab] = useState<'dados' | 'sobre' | 'afiliados' | 'termos' | 'privacidade'>('dados');
   const [savingInst, setSavingInst] = useState<boolean>(false);
   const [syncingInstTable, setSyncingInstTable] = useState<boolean>(false);
+  const [syncingBlogTables, setSyncingBlogTables] = useState<boolean>(false);
+
+  async function handleSyncBlogTables() {
+    try {
+      setSyncingBlogTables(true);
+      setFeedback(null);
+      const res = await ensureBlogTablesInMySql(storeSlug);
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: '✓ Tabelas do blog e colunas de banner lateral validadas e sincronizadas com sucesso no MySQL da Hostinger!'
+        });
+        loadSettings();
+      } else {
+        setFeedback({
+          type: 'error',
+          message: 'Aviso MySQL: ' + (res.message || 'Verifique as credenciais do banco na aba Banco de Dados.')
+        });
+      }
+      setTimeout(() => setFeedback(null), 6000);
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: 'Erro ao validar tabelas no MySQL: ' + (err?.message || 'Falha de conexão')
+      });
+    } finally {
+      setSyncingBlogTables(false);
+    }
+  }
 
   async function handleSyncInstitutionalTable() {
     try {
@@ -2480,15 +2509,32 @@ export default function BlogSettingsView({
               </p>
             </div>
 
-            {/* Botão Novo no topo e à direita do card */}
-            <button
-              type="button"
-              onClick={handleNewBanner}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo</span>
-            </button>
+            {/* Botões no topo e à direita do card */}
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+              <button
+                type="button"
+                onClick={handleSyncBlogTables}
+                disabled={syncingBlogTables}
+                title="Cria/valida a tabela blog_posts e coluna sidebarBanner no MySQL da Hostinger"
+                className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {syncingBlogTables ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-700" />
+                ) : (
+                  <Database className="w-3.5 h-3.5 text-amber-700" />
+                )}
+                <span>{syncingBlogTables ? 'Sincronizando...' : 'Sincronizar Tabelas MySQL'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNewBanner}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo</span>
+              </button>
+            </div>
           </div>
 
           {/* Tabela de Banners por Artigo */}
@@ -2698,7 +2744,7 @@ export default function BlogSettingsView({
                 >
                   <option value="">-- Selecione um artigo publicado --</option>
                   {blogPosts
-                    .filter(p => p.published !== false)
+                    .filter(p => p.published !== false && (!p.sidebarBanner?.imageUrl || p.id === selectedArticleId))
                     .map(p => (
                       <option key={p.id} value={p.id}>
                         {p.title} {p.sidebarBanner?.imageUrl ? '★ (Com banner)' : ''}
