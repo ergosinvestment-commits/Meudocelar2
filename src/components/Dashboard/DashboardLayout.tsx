@@ -47,7 +47,7 @@ export default function DashboardLayout({
 }: DashboardLayoutProps) {
   const [activeTab, setActiveTab] = useState<TabType>('products');
   const [config, setConfig] = useState<StoreConfig>({ ...FALLBACK_STORE_CONFIG, slug: currentStoreSlug });
-  const [products, setProducts] = useState<Product[]>(FALLBACK_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<StoreConfig[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -62,7 +62,7 @@ export default function DashboardLayout({
       if (cfg) {
         setConfig(cfg);
       }
-      if (Array.isArray(prods) && prods.length > 0) {
+      if (Array.isArray(prods)) {
         setProducts(prods);
       }
       if (Array.isArray(allStoresRes) && allStoresRes.length > 0) {

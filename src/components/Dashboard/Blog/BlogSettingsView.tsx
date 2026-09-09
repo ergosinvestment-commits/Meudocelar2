@@ -24,6 +24,7 @@ import {
   Save,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Megaphone,
   Layout,
   ExternalLink,
@@ -167,6 +168,7 @@ export default function BlogSettingsView({
   const [adHtmlCode, setAdHtmlCode] = useState('');
   const [adNewTab, setAdNewTab] = useState(true);
   const [confirmDeleteCat, setConfirmDeleteCat] = useState<string | null>(null);
+  const [confirmDeleteBannerId, setConfirmDeleteBannerId] = useState<string | null>(null);
 
   // Article Sidebar Vertical Banner states (Per-Article)
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
@@ -471,10 +473,9 @@ export default function BlogSettingsView({
   }
 
   function handleNewBanner() {
-    // Find first published post without a banner or fallback to first published post
-    const published = blogPosts.filter(p => p.published !== false);
-    const postWithoutBanner = published.find(p => !p.sidebarBanner?.imageUrl);
-    const nextPostId = postWithoutBanner ? postWithoutBanner.id : (published[0]?.id || '');
+    // Find first published post without a banner
+    const publishedWithoutBanner = blogPosts.filter(p => p.published !== false && !p.sidebarBanner?.imageUrl);
+    const nextPostId = publishedWithoutBanner[0]?.id || '';
 
     setSelectedArticleId(nextPostId);
     setSidebarBannerImg('');
@@ -546,9 +547,6 @@ export default function BlogSettingsView({
   }
 
   async function handleDeleteBanner(post: BlogPost) {
-    if (!confirm(`Deseja realmente excluir o banner lateral do artigo "${post.title}"?`)) {
-      return;
-    }
     try {
       setSaving(true);
       const updatedPost: BlogPost = {
@@ -587,6 +585,7 @@ export default function BlogSettingsView({
         message: `✓ Banner do artigo "${post.title}" excluído com sucesso!`
       });
       setTimeout(() => setFeedback(null), 4000);
+      setConfirmDeleteBannerId(null);
     } catch (err: any) {
       setFeedback({ type: 'error', message: 'Erro ao excluir banner: ' + (err?.message || '') });
     } finally {
@@ -750,7 +749,7 @@ export default function BlogSettingsView({
       // Ads
       articleFooterAds: adsList,
       articleFooterAd: adsList.find(a => a.enabled) || adsList[0] || undefined,
-      articleSidebarBanner: {
+      articleSidebarBanner: settings?.articleSidebarBanner || {
         enabled: false,
         imageUrl: '',
         linkUrl: '',
@@ -925,30 +924,44 @@ export default function BlogSettingsView({
 
   // Directly saves the ad for the currently selected category
   async function handleSaveCurrentCategoryAd(e?: React.MouseEvent) {
-    if (e) e.preventDefault();
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     try {
       setSaving(true);
       setFeedback(null);
 
       const targetCat = (customCategoryMode ? customCategoryInput : selectedCategory).trim();
       if (!targetCat) {
-        setFeedback({ type: 'error', message: 'Por favor, selecione ou informe a categoria do anúncio.' });
+        setFeedback({ type: 'error', message: 'Por favor, selecione ou informe a categoria do anúncio antes de salvar.' });
         setSaving(false);
         return;
       }
 
       const chosenProd = (adType === 'product' && selectedProductId) ? products.find(p => p.id === selectedProductId) : undefined;
 
+      // When saving an ad with configured content, ensure it is activated if not explicitly set
+      const hasContent = Boolean(
+        adTitle.trim() ||
+        adBannerImg.trim() ||
+        adBannerLink.trim() ||
+        (adType === 'product' && selectedProductId) ||
+        adHtmlCode.trim()
+      );
+      const finalEnabled = adEnabled || hasContent;
+      setAdEnabled(finalEnabled);
+
       const currentAdObj: ArticleFooterAd = {
         id: `ad-${targetCat.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
         category: targetCat,
-        enabled: adEnabled,
+        enabled: finalEnabled,
         type: adType,
         productId: adType === 'product' ? selectedProductId : undefined,
-        title: adTitle.trim() || chosenProd?.nome || '',
+        title: adTitle.trim() || chosenProd?.nome || `Ofertas & Dicas de ${targetCat}`,
         bannerImageUrl: adBannerImg.trim() || chosenProd?.img1 || '',
         bannerLinkUrl: adBannerLink.trim() || chosenProd?.linkAfiliado || '',
-        bannerAlt: adBannerAlt.trim() || chosenProd?.descricao || chosenProd?.nome || '',
+        bannerAlt: adBannerAlt.trim() || chosenProd?.descricao || chosenProd?.nome || `Confira as melhores ofertas de ${targetCat}`,
         bannerBadge: adBannerBadge.trim() || (chosenProd?.plataforma ? `ACHADINHO NA ${chosenProd.plataforma.toUpperCase()}` : 'OFERTA DO DIA'),
         bannerButtonText: adBannerBtn.trim() || (chosenProd?.plataforma ? `Ver Oferta na ${chosenProd.plataforma} →` : 'Aproveitar Oferta →'),
         htmlCode: adHtmlCode.trim(),
@@ -965,26 +978,32 @@ export default function BlogSettingsView({
       );
 
       if (existingIdx >= 0) {
-        newAdsList[existingIdx] = currentAdObj;
+        newAdsList[existingIdx] = {
+          ...newAdsList[existingIdx],
+          ...currentAdObj
+        };
       } else {
         newAdsList.push(currentAdObj);
       }
 
       if (customCategoryMode && customCategoryInput.trim()) {
-        if (!availableCategories.includes(customCategoryInput.trim())) {
-          setAvailableCategories(prev => [...prev, customCategoryInput.trim()]);
+        const customTrimmed = customCategoryInput.trim();
+        if (!availableCategories.includes(customTrimmed)) {
+          setAvailableCategories(prev => [...prev, customTrimmed]);
         }
-        setSelectedCategory(customCategoryInput.trim());
+        setSelectedCategory(customTrimmed);
         setCustomCategoryMode(false);
         setCustomCategoryInput('');
       }
 
+      setCategoryAds(newAdsList);
+
       await persistAdsToServer(
         newAdsList,
-        `✓ Anúncio para "${targetCat}" salvo com sucesso no servidor!` +
-          (adEnabled
+        `✓ Anúncio para a categoria "${targetCat}" salvo com sucesso no servidor!` +
+          (finalEnabled
             ? ' Está ATIVO e visível nos artigos dessa categoria.'
-            : ' Anúncio salvo (atualmente pausado - clique em Ativar para exibir no artigo).')
+            : ' Anúncio salvo (atualmente pausado - marque como Ativo para exibir nos artigos).')
       );
     } catch (err: any) {
       console.error('Error saving current category ad:', err);
@@ -2600,15 +2619,36 @@ export default function BlogSettingsView({
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
 
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteBanner(post)}
-                                    disabled={saving}
-                                    title="Excluir banner"
-                                    className="p-1.5 text-rose-600 bg-white hover:bg-rose-50 rounded-lg border border-rose-200 transition cursor-pointer"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {confirmDeleteBannerId === post.id ? (
+                                    <div className="flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">
+                                      <span className="text-[10px] font-bold text-rose-700">Excluir?</span>
+                                      <button
+                                        type="button"
+                                        disabled={saving}
+                                        onClick={() => handleDeleteBanner(post)}
+                                        className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[10px] font-black rounded cursor-pointer transition shadow-2xs"
+                                      >
+                                        Sim
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteBannerId(null)}
+                                        className="px-2 py-0.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 text-[10px] font-bold rounded cursor-pointer transition"
+                                      >
+                                        Não
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteBannerId(post.id)}
+                                      disabled={saving}
+                                      title="Excluir banner"
+                                      className="p-1.5 text-rose-600 bg-white hover:bg-rose-50 rounded-lg border border-rose-200 transition cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2817,6 +2857,33 @@ export default function BlogSettingsView({
             </div>
           </div>
         </div>
+
+        {/* In-section Feedback banner for Category Ads */}
+        {feedback && (
+          <div
+            className={`p-4 rounded-xl border flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 ${
+              feedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                : 'bg-rose-50 border-rose-300 text-rose-900'
+            }`}
+          >
+            <div className="flex items-center gap-2 text-xs font-bold">
+              {feedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{feedback.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="text-xs font-bold opacity-60 hover:opacity-100 p-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Existing Configured Ads summary cards */}
         {categoryAds.length > 0 && (
@@ -3610,6 +3677,46 @@ export default function BlogSettingsView({
                   </div>
                 </div>
               )}
+
+              {/* Bottom Save Action Bar inside Ad Form */}
+              <div className="pt-4 border-t border-neutral-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-xl border">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-600 font-medium">
+                    Categoria atual:{' '}
+                    <strong className="text-neutral-900 font-bold">
+                      {customCategoryMode ? (customCategoryInput || 'Nova Categoria') : selectedCategory}
+                    </strong>
+                  </span>
+                  <span className="text-neutral-300">•</span>
+                  <span className="text-xs font-semibold">
+                    Status:{' '}
+                    <strong className={adEnabled ? 'text-emerald-700 font-bold' : 'text-neutral-500'}>
+                      {adEnabled ? 'Ativo' : 'Pausado'}
+                    </strong>
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    disabled={saving || actionLoadingCat !== null}
+                    onClick={handleSaveCurrentCategoryAd}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {saving ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Salvando no Servidor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Salvar Anúncio desta Categoria</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

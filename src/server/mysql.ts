@@ -669,6 +669,13 @@ class MySqlManager {
         } catch {}
       }
     }
+
+    // Permanently purge legacy fake products from database
+    try {
+      await this.pool.query(`DELETE FROM products WHERE id IN ('prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8')`);
+    } catch (cleanErr) {
+      // Ignore if table is fresh or already empty
+    }
   }
 
   /**

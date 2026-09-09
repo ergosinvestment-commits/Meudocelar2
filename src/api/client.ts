@@ -65,15 +65,15 @@ export async function fetchStoreProducts(slug: string = 'achadinhos-da-maria'): 
   try {
     const res = await fetch(`${API_BASE}/store/${slug}/products?_t=${Date.now()}`);
     if (!res.ok) {
-      console.warn(`[Client] Aviso ao buscar produtos de ${slug}. Usando catálogo padrão.`);
-      return FALLBACK_PRODUCTS;
+      console.warn(`[Client] Aviso ao buscar produtos de ${slug} (status ${res.status}).`);
+      return [];
     }
     const prods = await res.json();
-    if (Array.isArray(prods) && prods.length > 0) return prods;
-    return FALLBACK_PRODUCTS;
+    if (Array.isArray(prods)) return prods;
+    return [];
   } catch (err) {
-    console.warn(`[Client] Falha de rede ao buscar produtos. Usando catálogo padrão.`);
-    return FALLBACK_PRODUCTS;
+    console.warn(`[Client] Falha de rede ao buscar produtos.`);
+    return [];
   }
 }
 
@@ -219,12 +219,12 @@ export async function deleteCategory(slug: string, id: string): Promise<boolean>
 export async function fetchAdminProducts(slug: string = 'achadinhos-da-maria'): Promise<Product[]> {
   try {
     const res = await fetch(`${API_BASE}/admin/store/${slug}/products?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_PRODUCTS;
+    if (!res.ok) return [];
     const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_PRODUCTS;
+    return Array.isArray(data) ? data : [];
   } catch (err) {
-    console.warn('[Client] Usando catálogo de produtos padrão para o admin');
-    return FALLBACK_PRODUCTS;
+    console.warn('[Client] Erro ao buscar produtos para o admin:', err);
+    return [];
   }
 }
 
