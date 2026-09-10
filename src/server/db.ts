@@ -1055,7 +1055,7 @@ class DatabaseManager {
         id,
         storeId: updates.storeId || 'store-1',
         nome: updates.nome || 'Categoria',
-        mostrarNoMenu: updates.mostrarNoMenu !== false,
+        mostrarNoMenu: updates.mostrarNoMenu !== undefined ? updates.mostrarNoMenu === false ? false : true : true,
         ordem: updates.ordem || this.data.categories.length + 1,
         subcategorias: updates.subcategorias || [],
         icone: updates.icone || '',
@@ -1082,7 +1082,7 @@ class DatabaseManager {
       ...current,
       ...updates,
       nome: newName,
-      mostrarNoMenu: updates.mostrarNoMenu !== undefined ? Boolean(updates.mostrarNoMenu) : current.mostrarNoMenu,
+      mostrarNoMenu: updates.mostrarNoMenu !== undefined ? updates.mostrarNoMenu === false ? false : true : current.mostrarNoMenu,
       ordem: updates.ordem !== undefined ? Number(updates.ordem) : current.ordem,
       subcategorias: cleanSubs,
       updatedAt: new Date().toISOString()
