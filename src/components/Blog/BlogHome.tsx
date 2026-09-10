@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BlogPost, StoreConfig, Product, BlogSettings, BlogCategory } from '../../types';
-import { fetchPublicBlogPosts, fetchStoreProducts, fetchPublicBlogSettings, fetchPublicBlogCategories } from '../../api/client';
+import { fetchPublicBlogPosts, fetchStoreProducts, fetchPublicBlogSettings, fetchPublicBlogCategories, getCachedData } from '../../api/client';
 import { normalizeImageUrl } from '../../utils';
 import {
   Search,
@@ -44,11 +44,15 @@ export default function BlogHome({
   onNavigateToInstitutional,
   onNavigateToContact
 }: BlogHomeProps) {
-  const [posts, setPosts] = useState<BlogPost[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  const cachedPosts = getCachedData<BlogPost[]>(`public_blog_posts_${storeSlug}`);
+  const cachedProds = getCachedData<Product[]>(`store_products_${storeSlug}`);
+  const cachedCats = getCachedData<BlogCategory[]>(`public_blog_categories_${storeSlug}`);
+
+  const [posts, setPosts] = useState<BlogPost[]>(() => cachedPosts || []);
+  const [products, setProducts] = useState<Product[]>(() => cachedProds || []);
   const [blogSettings, setBlogSettings] = useState<BlogSettings | null>(initialBlogSettings || null);
-  const [blogCategories, setBlogCategories] = useState<BlogCategory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [blogCategories, setBlogCategories] = useState<BlogCategory[]>(() => cachedCats || []);
+  const [loading, setLoading] = useState<boolean>(() => !cachedPosts || cachedPosts.length === 0);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
   const [categoriasOpen, setCategoriasOpen] = useState(false);
@@ -84,24 +88,45 @@ export default function BlogHome({
         }).catch(() => null);
       }
     }
+    function handlePostUpdated(e: any) {
+      const updatedPost = e?.detail as BlogPost;
+      if (updatedPost) {
+        setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+      }
+    }
+    function handleCatsUpdated(e: any) {
+      fetchPublicBlogCategories(storeSlug).then(cats => {
+        if (cats) setBlogCategories(cats);
+      }).catch(() => {});
+    }
     window.addEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
-    return () => window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
+    window.addEventListener('blog-post-updated', handlePostUpdated as EventListener);
+    window.addEventListener('blog-posts-updated', handlePostUpdated as EventListener);
+    window.addEventListener('blog-categories-updated', handleCatsUpdated as EventListener);
+    return () => {
+      window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
+      window.removeEventListener('blog-post-updated', handlePostUpdated as EventListener);
+      window.removeEventListener('blog-posts-updated', handlePostUpdated as EventListener);
+      window.removeEventListener('blog-categories-updated', handleCatsUpdated as EventListener);
+    };
   }, [storeSlug]);
 
   useEffect(() => {
     async function loadData() {
       try {
-        setLoading(true);
+        if (!cachedPosts || cachedPosts.length === 0) {
+          setLoading(true);
+        }
         const [postsRes, prodsRes, settingsRes, catsRes] = await Promise.all([
           fetchPublicBlogPosts(storeSlug),
           fetchStoreProducts(storeSlug).catch(() => []),
           fetchPublicBlogSettings(storeSlug).catch(() => null),
           fetchPublicBlogCategories(storeSlug).catch(() => [])
         ]);
-        setPosts(postsRes || []);
-        setProducts(prodsRes || []);
-        setBlogSettings(settingsRes);
-        setBlogCategories(catsRes || []);
+        if (postsRes) setPosts(postsRes);
+        if (prodsRes) setProducts(prodsRes);
+        if (settingsRes) setBlogSettings(settingsRes);
+        if (catsRes) setBlogCategories(catsRes);
       } catch (err) {
         console.error('Error loading blog home data:', err);
       } finally {

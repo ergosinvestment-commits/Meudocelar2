@@ -40,6 +40,13 @@ interface DbDiagnostics {
     platforms: number;
     clicks: number;
   };
+  localCounts?: {
+    stores: number;
+    products: number;
+    categories: number;
+    platforms: number;
+    clicks: number;
+  };
 }
 
 export default function DatabaseTab({ storeSlug }: DatabaseTabProps) {
@@ -427,28 +434,50 @@ JWT_SECRET=hostinger_prod_key_${Math.random().toString(36).substring(2, 15)}_${D
             {/* Table Counters */}
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-neutral-100 text-xs">
               <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-neutral-400 text-[10px] block">Produtos</span>
-                <strong className="text-neutral-900 font-bold text-sm">{diag?.tableCounts?.products ?? 0}</strong>
+                <span className="text-neutral-400 text-[10px] block">
+                  Produtos {diag?.connected ? '(MySQL)' : '(Local)'}
+                </span>
+                <strong className="text-neutral-900 font-bold text-sm">
+                  {diag?.connected ? (diag?.tableCounts?.products ?? 0) : (diag?.localCounts?.products ?? 0)}
+                </strong>
               </div>
               <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-neutral-400 text-[10px] block">Categorias</span>
-                <strong className="text-neutral-900 font-bold text-sm">{diag?.tableCounts?.categories ?? 0}</strong>
+                <span className="text-neutral-400 text-[10px] block">
+                  Categorias {diag?.connected ? '(MySQL)' : '(Local)'}
+                </span>
+                <strong className="text-neutral-900 font-bold text-sm">
+                  {diag?.connected ? (diag?.tableCounts?.categories ?? 0) : (diag?.localCounts?.categories ?? 0)}
+                </strong>
               </div>
               <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-neutral-400 text-[10px] block">Plataformas</span>
-                <strong className="text-neutral-900 font-bold text-sm">{diag?.tableCounts?.platforms ?? 0}</strong>
+                <span className="text-neutral-400 text-[10px] block">
+                  Plataformas {diag?.connected ? '(MySQL)' : '(Local)'}
+                </span>
+                <strong className="text-neutral-900 font-bold text-sm">
+                  {diag?.connected ? (diag?.tableCounts?.platforms ?? 0) : (diag?.localCounts?.platforms ?? 0)}
+                </strong>
               </div>
               <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-neutral-400 text-[10px] block">Lojas</span>
-                <strong className="text-neutral-900 font-bold text-sm">{diag?.tableCounts?.stores ?? 0}</strong>
+                <span className="text-neutral-400 text-[10px] block">
+                  Lojas {diag?.connected ? '(MySQL)' : '(Local)'}
+                </span>
+                <strong className="text-neutral-900 font-bold text-sm">
+                  {diag?.connected ? (diag?.tableCounts?.stores ?? 0) : (diag?.localCounts?.stores ?? 0)}
+                </strong>
               </div>
               <div className="p-2.5 bg-neutral-50 rounded-xl">
-                <span className="text-neutral-400 text-[10px] block">Cliques Registrados</span>
-                <strong className="text-neutral-900 font-bold text-sm">{diag?.tableCounts?.clicks ?? 0}</strong>
+                <span className="text-neutral-400 text-[10px] block">
+                  Cliques {diag?.connected ? '(MySQL)' : '(Local)'}
+                </span>
+                <strong className="text-neutral-900 font-bold text-sm">
+                  {diag?.connected ? (diag?.tableCounts?.clicks ?? 0) : (diag?.localCounts?.clicks ?? 0)}
+                </strong>
               </div>
               <div className="p-2.5 bg-neutral-50 rounded-xl">
                 <span className="text-neutral-400 text-[10px] block">Latência</span>
-                <strong className="text-neutral-900 font-bold text-sm">{diag?.connected ? `${diag.latencyMs}ms` : '0ms (Local)'}</strong>
+                <strong className="text-neutral-900 font-bold text-sm">
+                  {diag?.connected ? `${diag.latencyMs}ms` : 'Ativo (Local)'}
+                </strong>
               </div>
             </div>
           </div>

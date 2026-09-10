@@ -85,6 +85,27 @@ export default function App() {
     return () => window.removeEventListener('store-config-updated', handleStoreConfigUpdated as EventListener);
   }, [storeSlug]);
 
+  // Keep selectedArticle synchronized if updated
+  useEffect(() => {
+    function handlePostUpdated(e: any) {
+      const updatedPost = e?.detail;
+      if (updatedPost) {
+        setSelectedArticle(prev => {
+          if (prev && (prev.id === updatedPost.id || prev.slug === updatedPost.slug)) {
+            return { ...prev, ...updatedPost };
+          }
+          return prev;
+        });
+      }
+    }
+    window.addEventListener('blog-post-updated', handlePostUpdated as EventListener);
+    window.addEventListener('blog-posts-updated', handlePostUpdated as EventListener);
+    return () => {
+      window.removeEventListener('blog-post-updated', handlePostUpdated as EventListener);
+      window.removeEventListener('blog-posts-updated', handlePostUpdated as EventListener);
+    };
+  }, []);
+
   // Handle URL mode and query parameters
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

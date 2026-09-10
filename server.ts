@@ -14,7 +14,7 @@ import { saveOptimizedUpload, optimizeBuffer, optimizeImageUrl } from './src/ser
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   // Trust proxy for reverse proxies (Cloud Run, Hostinger, Nginx)
   app.set('trust proxy', 1);
@@ -109,6 +109,7 @@ async function startServer() {
 
   // Get Store Configuration
   app.get('/api/store/:slug', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     let store = db.getStoreBySlug(slug);
     if (!store) {
@@ -124,6 +125,7 @@ async function startServer() {
 
   // Get Store Products (Public - only active & non-expired)
   app.get('/api/store/:slug/products', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     let products = db.getProducts(slug, true);
     if (!products || products.length === 0) {
@@ -134,6 +136,7 @@ async function startServer() {
 
   // Get Store Categories (Public)
   app.get('/api/store/:slug/categories', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const onlyMenu = req.query.menu === 'true';
     const categories = db.getCategories(slug, onlyMenu);
@@ -142,6 +145,7 @@ async function startServer() {
 
   // Get Store Platforms (Public)
   app.get('/api/store/:slug/platforms', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const platforms = db.getPlatforms(slug, true);
     res.json(platforms);
@@ -168,6 +172,7 @@ async function startServer() {
 
   // Get Published Blog Posts
   app.get('/api/store/:slug/posts', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const posts = db.getPosts(slug, true);
     res.json(posts);
@@ -175,6 +180,7 @@ async function startServer() {
 
   // Get Single Blog Post by Slug
   app.get('/api/store/:slug/posts/:postSlug', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const postSlug = req.params.postSlug;
     const post = db.getPostBySlug(slug, postSlug);
@@ -193,6 +199,7 @@ async function startServer() {
 
   // Get Public Blog Settings
   app.get(['/api/store/:slug/blog-settings', '/api/public/store/:slug/blog-settings'], (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const settings = db.getBlogSettings(slug);
     res.json(settings);
@@ -200,6 +207,7 @@ async function startServer() {
 
   // Get Public Blog Categories
   app.get('/api/store/:slug/blog-categories', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const categories = db.getBlogCategories(slug, true);
     res.json(categories);
@@ -207,6 +215,7 @@ async function startServer() {
 
   // Get Public Blog Editors
   app.get('/api/store/:slug/blog-editors', (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const editors = db.getBlogEditors(slug, true);
     res.json(editors);
@@ -214,6 +223,7 @@ async function startServer() {
 
   // Get Public Institutional Data
   app.get(['/api/store/:slug/institutional', '/api/public/store/:slug/institutional'], (req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const data = db.getInstitutional(slug);
     res.json(data);
@@ -868,7 +878,22 @@ async function startServer() {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     try {
       const diag = await mysqlManager.getLiveDiagnostics();
-      res.json({ success: true, ...diag });
+      const allData: any = db.getAllData();
+      const localCounts = {
+        stores: allData.stores?.length || 0,
+        products: allData.products?.length || 0,
+        categories: allData.categories?.length || 0,
+        platforms: allData.platforms?.length || 0,
+        clicks: allData.clicks?.length || 0,
+        users: allData.users?.length || 0,
+        blog_posts: allData.posts?.length || 0,
+        blog_categories: allData.blogCategories?.length || 0,
+        blog_editors: allData.blogEditors?.length || 0,
+        blog_settings: allData.blogSettings ? 1 : 0,
+        contact_messages: allData.contactMessages?.length || 0,
+        institutional_pages: allData.institutionalPages?.length || 0
+      };
+      res.json({ success: true, ...diag, localCounts });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err?.message || 'Erro ao obter diagnóstico' });
     }
@@ -890,7 +915,7 @@ async function startServer() {
         host: String(host).trim(),
         port: Number(port || 3306),
         user: String(user).trim(),
-        password: password ? String(password).trim() : '',
+        password: password !== undefined && password !== null && String(password).trim() !== '' ? String(password).trim() : undefined,
         database: String(database).trim(),
         ssl: Boolean(ssl)
       });
@@ -1069,7 +1094,7 @@ async function startServer() {
         host: String(host).trim(),
         port: Number(port || 3306),
         user: String(user).trim(),
-        password: password ? String(password).trim() : '',
+        password: password !== undefined && password !== null && String(password).trim() !== '' ? String(password).trim() : undefined,
         database: String(database).trim(),
         ssl: Boolean(ssl)
       });

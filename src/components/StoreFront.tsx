@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StoreConfig, Product, Category, Platform } from '../types';
-import { fetchStoreConfig, fetchStoreProducts, fetchStoreCategories, fetchStorePlatforms, recordProductClick, recordStoreView } from '../api/client';
+import { fetchStoreConfig, fetchStoreProducts, fetchStoreCategories, fetchStorePlatforms, recordProductClick, recordStoreView, getCachedData } from '../api/client';
 import { Search, X, MessageCircle, Send, ExternalLink, Share2, ArrowUp, Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Menu, Plus, Minus, LayoutGrid, Layers, Tag, Home, Globe, Lock, Image as ImageIcon, BookOpen } from 'lucide-react';
 import DynamicIcon from './DynamicIcon';
 import { normalizeImageUrl, getProxiedImageUrl } from '../utils';
@@ -15,11 +15,16 @@ interface StoreFrontProps {
 }
 
 export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlog }: StoreFrontProps) {
-  const [config, setConfig] = useState<StoreConfig | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedCfg = getCachedData<StoreConfig>(`store_config_${storeSlug}`);
+  const cachedProds = getCachedData<Product[]>(`store_products_${storeSlug}`);
+  const cachedCats = getCachedData<Category[]>(`store_categories_${storeSlug}`);
+  const cachedPlats = getCachedData<Platform[]>(`store_platforms_${storeSlug}`);
+
+  const [config, setConfig] = useState<StoreConfig | null>(() => cachedCfg || null);
+  const [products, setProducts] = useState<Product[]>(() => cachedProds || []);
+  const [categories, setCategories] = useState<Category[]>(() => cachedCats || []);
+  const [platforms, setPlatforms] = useState<Platform[]>(() => cachedPlats || []);
+  const [loading, setLoading] = useState<boolean>(() => !cachedProds || cachedProds.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   // Filter States
@@ -70,7 +75,9 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
   useEffect(() => {
     async function loadData() {
       try {
-        setLoading(true);
+        if (!cachedProds || cachedProds.length === 0) {
+          setLoading(true);
+        }
         setError(null);
         const [storeCfg, storeProds, storeCats, storePlats] = await Promise.all([
           fetchStoreConfig(storeSlug),

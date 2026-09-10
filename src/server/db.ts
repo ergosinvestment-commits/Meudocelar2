@@ -163,7 +163,183 @@ const DEFAULT_STORE: StoreConfig = {
   adminPassword: 'admin'
 };
 
-const DEFAULT_PRODUCTS: Product[] = [];
+export const REAL_DEMO_PRODUCTS: Product[] = [
+  {
+    id: 'prod-1',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Amazon',
+    categoria: 'Eletrônicos',
+    subcategoria: 'Áudio',
+    nome: 'Fone de Ouvido Bluetooth JBL Tune 520BT com Som Pure Bass',
+    descricao: 'Fone sem fio JBL Tune 520BT com bateria de até 57 horas de reprodução, carregamento rápido (5 minutos = 3 horas), microfone integrado para chamadas mãos livres e conexão multipontos para alternar entre dispositivos facilmente.',
+    preco: 299.00,
+    precoPromo: 219.90,
+    cupom: 'JBL10OFF',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://amazon.com.br?tag=achadinhos-maria-20',
+    textoBotao: 'Ver oferta na Amazon →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&auto=format&fit=crop&q=80&fm=webp',
+    img2: 'https://images.unsplash.com/photo-1484704849700-f032a568e944?w=800&auto=format&fit=crop&q=80&fm=webp',
+    img3: 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 1,
+    destaque: true
+  },
+  {
+    id: 'prod-2',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Shopee',
+    categoria: 'Casa & Cozinha',
+    subcategoria: 'Eletroportáteis',
+    nome: 'Fritadeira Elétrica Air Fryer Digital 4.5L Inox',
+    descricao: 'Air Fryer com painel touch digital, 8 funções pré-programadas, cesto antiaderente removível com revestimento cerâmico e timer sonoro de 60 minutos. Cozinha alimentos crocantes com até 80% menos óleo.',
+    preco: 459.90,
+    precoPromo: 289.00,
+    cupom: 'AIRFRYER20',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://shopee.com.br?affiliate=achadinhos',
+    textoBotao: 'Pegar Desconto na Shopee →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1585659722983-3a675dabf23d?w=800&auto=format&fit=crop&q=80&fm=webp',
+    img2: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 2,
+    destaque: true
+  },
+  {
+    id: 'prod-3',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Mercado Livre',
+    categoria: 'Eletrônicos',
+    subcategoria: 'Wearables',
+    nome: 'Smartwatch Xiaomi Smart Band 8 Tela AMOLED 1.62"',
+    descricao: 'Pulseira inteligente com mais de 150 modos esportivos, monitoramento contínuo de frequência cardíaca e oxigênio no sangue (SpO2), bateria com autonomia de até 16 dias e resistência à água de 5 ATM (50 metros).',
+    preco: 249.00,
+    precoPromo: 189.90,
+    cupom: 'MELLIBRE15',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://mercadolivre.com.br/sec/promo',
+    textoBotao: 'Ver no Mercado Livre →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1579586337278-3befd40fd17a?w=800&auto=format&fit=crop&q=80&fm=webp',
+    img2: 'https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 3,
+    destaque: true
+  },
+  {
+    id: 'prod-4',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Amazon',
+    categoria: 'Casa & Cozinha',
+    subcategoria: 'Organização',
+    nome: 'Kit 6 Potes Herméticos de Vidro com Tampa de Bambu',
+    descricao: 'Conjunto com 6 potes de vidro borossilicato resistente a calor e choque térmico com tampas herméticas em bambu natural e anel de silicone. Ideais para mantimentos, grãos, café e organização estética de despensa.',
+    preco: 169.90,
+    precoPromo: 119.00,
+    cupom: 'CASA10',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://amazon.com.br?tag=achadinhos-maria-20',
+    textoBotao: 'Ver oferta na Amazon →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=800&auto=format&fit=crop&q=80&fm=webp',
+    img2: 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 4,
+    destaque: false
+  },
+  {
+    id: 'prod-5',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Magalu',
+    categoria: 'Beleza & Cuidados',
+    subcategoria: 'Cabelos',
+    nome: 'Escova Secadora e Modeladora 3 em 1 Cerâmica Íons 1200W',
+    descricao: 'Seca, alisa e modela com cerdas macias anti-frizz e tecnologia de íons negativos que selam as cutículas dos fios. Possui 3 temperaturas ajustáveis e cabo giratório 360 graus.',
+    preco: 189.90,
+    precoPromo: 99.90,
+    cupom: 'BELEZA25',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://magazineluiza.com.br',
+    textoBotao: 'Ver na Magalu →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 5,
+    destaque: false
+  },
+  {
+    id: 'prod-6',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'DIGITAL',
+    plataforma: 'Hotmart',
+    categoria: 'Cursos & Livros',
+    subcategoria: 'Desenvolvimento',
+    nome: 'Curso Completo de Marketing para Afiliados e Tráfego Pago',
+    descricao: 'Aprenda do zero ao avançado como criar campanhas de alto retorno, encontrar produtos vencedores e estruturar uma renda recorrente com programas de afiliados globais.',
+    preco: 497.00,
+    precoPromo: 197.00,
+    cupom: 'DESCONTOVIP',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://hotmart.com',
+    textoBotao: 'Quero Conhecer o Curso →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 6,
+    destaque: false
+  },
+  {
+    id: 'prod-7',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Shopee',
+    categoria: 'Eletrônicos',
+    subcategoria: 'Acessórios',
+    nome: 'Luminária de Mesa LED Articulada Recarregável Touch com Porta-Caneta',
+    descricao: 'Lâmpada de mesa com 3 intensidades de luz (quente, fria e neutra), haste flexível de silicone, suporte para celular integrado e bateria recarregável USB com até 8h de duração contínua.',
+    preco: 69.90,
+    precoPromo: 38.50,
+    cupom: '',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://shopee.com.br',
+    textoBotao: 'Ver Oferta na Shopee →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1534353436294-0dbd4bdac845?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 7,
+    destaque: false
+  },
+  {
+    id: 'prod-8',
+    storeId: 'store-1',
+    ativo: true,
+    tipo: 'FISICO',
+    plataforma: 'Amazon',
+    categoria: 'Eletrônicos',
+    subcategoria: 'Dispositivos',
+    nome: 'Echo Pop Smart Speaker Compacto com Alexa e Som Envolvente',
+    descricao: 'A smart speaker com som surround compacto que cabe perfeitamente em quartos e espaços pequenos. Peça músicas para Alexa, controle dispositivos de casa inteligente, timer, previsão do tempo e muito mais.',
+    preco: 349.00,
+    precoPromo: 249.00,
+    cupom: 'ALEXAPROMO',
+    validade: '2027-12-31',
+    linkAfiliado: 'https://amazon.com.br',
+    textoBotao: 'Ver na Amazon →',
+    video: '',
+    img1: 'https://images.unsplash.com/photo-1543512214-318c7553f230?w=800&auto=format&fit=crop&q=80&fm=webp',
+    ordem: 8,
+    destaque: false
+  }
+];
+
+const DEFAULT_PRODUCTS: Product[] = REAL_DEMO_PRODUCTS;
 
 const INITIAL_CLICKS: ClickRecord[] = [
   {
@@ -325,12 +501,10 @@ class DatabaseManager {
           });
         }
 
-        // Clean up legacy fake demo products and ensure products have WebP images
+        // Ensure products list is populated and uses WebP images
         if (Array.isArray(parsed.products)) {
-          const fakeIds = new Set(['prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8']);
-          const initialCount = parsed.products.length;
-          parsed.products = parsed.products.filter((p: Product) => !fakeIds.has(p.id));
-          if (parsed.products.length !== initialCount) {
+          if (parsed.products.length === 0) {
+            parsed.products = [...REAL_DEMO_PRODUCTS];
             changed = true;
           }
 

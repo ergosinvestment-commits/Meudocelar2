@@ -28,9 +28,37 @@ import {
 
 export const API_BASE = '/api';
 
-// Simple memory + sessionStorage cache with TTL (e.g. 3 minutes)
+// Resilient memory + sessionStorage cache with Stale-While-Revalidate
 const apiCache = new Map<string, { data: any; expiry: number }>();
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes TTL
+
+/**
+ * Synchronously retrieves cached data from memory or sessionStorage.
+ * Allows components to mount instantly with existing data, eliminating all loading flashes.
+ */
+export function getCachedData<T>(cacheKey: string): T | null {
+  const now = Date.now();
+  if (apiCache.has(cacheKey)) {
+    const cached = apiCache.get(cacheKey)!;
+    // Return data even if slightly expired to allow immediate instant render
+    if (cached.data) {
+      return cached.data as T;
+    }
+  }
+
+  try {
+    const raw = sessionStorage.getItem(`apicache_${cacheKey}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.data) {
+        apiCache.set(cacheKey, { data: parsed.data, expiry: parsed.expiry || (now + CACHE_TTL) });
+        return parsed.data as T;
+      }
+    }
+  } catch {}
+
+  return null;
+}
 
 export function clearApiCache() {
   apiCache.clear();
@@ -44,17 +72,55 @@ export function clearApiCache() {
   } catch {}
 }
 
-async function cachedFetch<T>(cacheKey: string, fetchFn: () => Promise<T>, ttl: number = CACHE_TTL): Promise<T> {
+export function invalidateCache(pattern?: string) {
+  if (!pattern) {
+    clearApiCache();
+    return;
+  }
+  for (const key of Array.from(apiCache.keys())) {
+    if (key.includes(pattern)) {
+      apiCache.delete(key);
+    }
+  }
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('apicache_') && key.includes(pattern)) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {}
+}
+
+async function cachedFetch<T>(
+  cacheKey: string,
+  fetchFn: () => Promise<T>,
+  ttl: number = CACHE_TTL,
+  allowStale: boolean = true
+): Promise<T> {
   const now = Date.now();
+
+  // 1. Check in-memory cache
   if (apiCache.has(cacheKey)) {
     const cached = apiCache.get(cacheKey)!;
     if (cached.expiry > now) {
       return cached.data;
-    } else {
-      apiCache.delete(cacheKey);
+    }
+    // Stale-While-Revalidate: Return stale cached data immediately and refresh silently in background
+    if (allowStale && cached.data) {
+      fetchFn().then(fresh => {
+        if (fresh !== undefined && fresh !== null) {
+          apiCache.set(cacheKey, { data: fresh, expiry: Date.now() + ttl });
+          try {
+            sessionStorage.setItem(`apicache_${cacheKey}`, JSON.stringify({ data: fresh, expiry: Date.now() + ttl }));
+          } catch {}
+        }
+      }).catch(() => {});
+      return cached.data;
     }
   }
 
+  // 2. Check sessionStorage
   try {
     const raw = sessionStorage.getItem(`apicache_${cacheKey}`);
     if (raw) {
@@ -62,12 +128,23 @@ async function cachedFetch<T>(cacheKey: string, fetchFn: () => Promise<T>, ttl: 
       if (parsed.expiry > now) {
         apiCache.set(cacheKey, { data: parsed.data, expiry: parsed.expiry });
         return parsed.data;
-      } else {
-        sessionStorage.removeItem(`apicache_${cacheKey}`);
+      }
+      if (allowStale && parsed.data) {
+        apiCache.set(cacheKey, { data: parsed.data, expiry: parsed.expiry });
+        fetchFn().then(fresh => {
+          if (fresh !== undefined && fresh !== null) {
+            apiCache.set(cacheKey, { data: fresh, expiry: Date.now() + ttl });
+            try {
+              sessionStorage.setItem(`apicache_${cacheKey}`, JSON.stringify({ data: fresh, expiry: Date.now() + ttl }));
+            } catch {}
+          }
+        }).catch(() => {});
+        return parsed.data;
       }
     }
   } catch {}
 
+  // 3. Perform network fetch
   const data = await fetchFn();
   const expiry = now + ttl;
   apiCache.set(cacheKey, { data, expiry });

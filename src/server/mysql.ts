@@ -37,7 +37,8 @@ class MySqlManager {
   private pool: mysql.Pool | null = null;
   private isConnected: boolean = false;
   private connectionError: string | null = null;
-  private activeConfig: MySqlConfig | null = null;
+  private activeConfig: (MySqlConfig & { password?: string }) | null = null;
+  private keepAliveInterval: any = null;
 
   public isReady(): boolean {
     return this.isConnected && this.pool !== null;
@@ -59,66 +60,157 @@ class MySqlManager {
     };
   }
 
+  public async reconnect(): Promise<boolean> {
+    if (!this.activeConfig) return false;
+    try {
+      if (this.pool) {
+        try { await this.pool.end(); } catch (_) {}
+      }
+      const { host, port, user, database, ssl, password } = this.activeConfig;
+
+      this.pool = mysql.createPool({
+        host,
+        port,
+        user,
+        password: password || '',
+        database,
+        waitForConnections: true,
+        connectionLimit: 10,
+        maxIdle: 5,
+        idleTimeout: 60000,
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000,
+        connectTimeout: 20000,
+        ssl: ssl ? { rejectUnauthorized: false } : undefined
+      });
+
+      (this.pool as any).on('error', (err: any) => {
+        console.warn('[Hostinger MySQL Pool Event]', err?.code || err?.message);
+        if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
+          this.reconnect().catch(() => {});
+        }
+      });
+
+      await this.pool.query('SELECT 1 as test');
+      this.isConnected = true;
+      this.connectionError = null;
+      console.log('[Hostinger MySQL] Conexão restabelecida automaticamente com sucesso.');
+      return true;
+    } catch (err: any) {
+      this.isConnected = false;
+      this.connectionError = err?.message || 'Falha ao restabelecer conexão MySQL';
+      return false;
+    }
+  }
+
+  public async executeQuery<T = any>(querySql: string, params?: any[]): Promise<T> {
+    if (!this.pool) {
+      if (this.activeConfig?.host) {
+        await this.reconnect().catch(() => {});
+      }
+      if (!this.pool) {
+        throw new Error('MySQL pool não inicializado.');
+      }
+    }
+
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        const [res] = await this.pool.query(querySql, params);
+        if (!this.isConnected) {
+          this.isConnected = true;
+          this.connectionError = null;
+        }
+        return res as T;
+      } catch (err: any) {
+        const isConnErr =
+          err?.code === 'PROTOCOL_CONNECTION_LOST' ||
+          err?.code === 'ECONNRESET' ||
+          err?.code === 'ETIMEDOUT' ||
+          err?.code === 'EPIPE' ||
+          err?.code === 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' ||
+          err?.code === 'PROTOCOL_PACKETS_OUT_OF_ORDER' ||
+          err?.message?.includes('closed') ||
+          err?.message?.includes('Connection lost') ||
+          err?.message?.includes('is not connected');
+
+        if (isConnErr && attempts < maxAttempts) {
+          console.warn(`[Hostinger MySQL] Tentativa ${attempts} falhou (${err?.code || err?.message}). Reconectando automaticamente...`);
+          await this.reconnect().catch(() => {});
+          await new Promise(r => setTimeout(r, 400));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error('Falha após múltiplas tentativas no MySQL.');
+  }
+
   public async init(customConfig?: MySqlConfig): Promise<boolean> {
     let config: MySqlConfig = customConfig || {};
 
-    // 1. Check DATABASE_URL or MYSQL_URL
+    // 1. Read data/db_config.json FIRST so saved UI configuration is preserved across restarts
+    let savedConfig: MySqlConfig = {};
+    if (fs.existsSync(CONFIG_FILE)) {
+      try {
+        savedConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')) || {};
+      } catch (err) {
+        console.warn('[Hostinger MySQL] Aviso ao ler db_config.json:', err);
+      }
+    }
+
+    // 2. Resolve parameters: customConfig > data/db_config.json > process.env
+    let host = config.host || savedConfig.host || process.env.DB_HOST || process.env.MYSQL_HOST;
+    let user = config.user || savedConfig.user || process.env.DB_USER || process.env.MYSQL_USER;
+    let password = config.password !== undefined
+      ? config.password
+      : (savedConfig.password !== undefined
+        ? savedConfig.password
+        : (process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || ''));
+    let database = config.database || savedConfig.database || process.env.DB_NAME || process.env.MYSQL_DATABASE;
+    let port = Number(config.port || savedConfig.port || process.env.DB_PORT || process.env.MYSQL_PORT || 3306);
+    let useSsl = config.ssl ?? savedConfig.ssl ?? (process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true');
+
+    // 3. Fallback to DATABASE_URL / MYSQL_URL if host or database is missing
     const dbUrl = process.env.DATABASE_URL || process.env.MYSQL_URL;
-    if (dbUrl && (!config.host || !config.database)) {
+    if (dbUrl && (!host || !database)) {
       try {
         const parsed = new URL(dbUrl);
-        if (parsed.hostname) config.host = parsed.hostname;
-        if (parsed.port) config.port = Number(parsed.port);
-        if (parsed.username) config.user = decodeURIComponent(parsed.username);
-        if (parsed.password) config.password = decodeURIComponent(parsed.password);
-        if (parsed.pathname && parsed.pathname.length > 1) {
-          config.database = parsed.pathname.substring(1);
+        if (parsed.hostname && !host) host = parsed.hostname;
+        if (parsed.port && !port) port = Number(parsed.port);
+        if (parsed.username && !user) user = decodeURIComponent(parsed.username);
+        if (parsed.password && !password) password = decodeURIComponent(parsed.password);
+        if (parsed.pathname && parsed.pathname.length > 1 && !database) {
+          database = parsed.pathname.substring(1);
         }
       } catch (e) {
         console.warn('[Hostinger MySQL] Aviso ao parsear DATABASE_URL:', e);
       }
     }
 
-    // 2. Check environment variables
-    let host = config.host || process.env.DB_HOST || process.env.MYSQL_HOST;
-    let user = config.user || process.env.DB_USER || process.env.MYSQL_USER;
-    let password = config.password !== undefined ? config.password : (process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || '');
-    let database = config.database || process.env.DB_NAME || process.env.MYSQL_DATABASE;
-    let port = Number(config.port || process.env.DB_PORT || process.env.MYSQL_PORT || 3306);
-    let useSsl = config.ssl ?? (process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true');
-
-    // 3. Check saved data/db_config.json if not in env
-    if ((!host || !user || !database) && fs.existsSync(CONFIG_FILE)) {
-      try {
-        const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-        if (saved && saved.host && saved.user && saved.database) {
-          host = saved.host;
-          user = saved.user;
-          password = saved.password || '';
-          database = saved.database;
-          port = Number(saved.port || 3306);
-          if (saved.ssl !== undefined) useSsl = Boolean(saved.ssl);
-        }
-      } catch (err) {
-        console.warn('[Hostinger MySQL] Aviso ao ler db_config.json:', err);
-      }
-    }
-
     // If still no MySQL credentials configured, gracefully stay in file-based storage mode
     if (!host || !user || !database) {
       this.isConnected = false;
-      this.connectionError = 'Credenciais MySQL não configuradas no servidor (DB_HOST, DB_USER, DB_NAME ou aba Banco de Dados).';
+      this.connectionError = 'Credenciais MySQL não configuradas (insira na aba Banco de Dados).';
       return false;
     }
 
     try {
+      if (this.keepAliveInterval) {
+        clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = null;
+      }
+
       if (this.pool) {
         try {
           await this.pool.end();
         } catch (_) {}
       }
 
-      this.activeConfig = { host, user, database, port, ssl: useSsl };
+      this.activeConfig = { host, user, database, port, ssl: useSsl, password };
 
       this.pool = mysql.createPool({
         host,
@@ -127,50 +219,92 @@ class MySqlManager {
         password,
         database,
         waitForConnections: true,
-        connectionLimit: 10,
+        connectionLimit: 5,
+        maxIdle: 2,
+        idleTimeout: 30000,
         queueLimit: 0,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 30000,
-        connectTimeout: 30000,
+        keepAliveInitialDelay: 15000,
+        connectTimeout: 20000,
         ssl: useSsl ? { rejectUnauthorized: false } : undefined
+      });
+
+      (this.pool as any).on('error', (err: any) => {
+        console.warn('[Hostinger MySQL Pool Error]', err?.code || err?.message);
+        if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET') {
+          this.reconnect().catch(() => {});
+        }
       });
 
       // Test connection once on init
       await this.pool.query('SELECT 1 as test');
       this.isConnected = true;
       this.connectionError = null;
-      console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' em ${host}:${port}. Conexão estável estabelecida sem checagens periódicas.`);
+      console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' em ${host}:${port}. Conexão persistente ativa.`);
+
+      // Setup keep-alive ping every 25s so Hostinger wait_timeout never closes the socket
+      this.keepAliveInterval = setInterval(async () => {
+        if (this.pool && this.isConnected) {
+          try {
+            await this.pool.query('SELECT 1 as ping');
+          } catch (pingErr: any) {
+            console.warn('[Hostinger MySQL] Ping keep-alive falhou, restabelecendo pool...', pingErr?.message);
+            await this.reconnect();
+          }
+        }
+      }, 25000);
+      if (this.keepAliveInterval?.unref) {
+        this.keepAliveInterval.unref();
+      }
 
       // Ensure tables exist
       await this.createTablesIfNotExist();
       return true;
     } catch (err: any) {
       this.isConnected = false;
-      this.connectionError = err?.message || 'Falha ao conectar ao banco MySQL';
-      console.warn(`[Hostinger MySQL] Conexão falhou: ${this.connectionError}.`);
+      if (err?.code === 'ECONNREFUSED' && (host === 'localhost' || host === '127.0.0.1')) {
+        this.connectionError = `Não foi possível conectar em 'localhost:3306' dentro do container da nuvem. Na Hostinger (onde o MySQL roda no mesmo servidor), 'localhost' funciona automaticamente. Para conectar aqui no preview, insira o IP do seu servidor Hostinger na aba Banco de Dados e ative 'Acesso Remoto MySQL' no hPanel da Hostinger.`;
+      } else {
+        this.connectionError = err?.message || 'Falha ao conectar ao banco MySQL';
+      }
+      console.warn(`[Hostinger MySQL] Conexão MySQL inativa: ${this.connectionError}. Usando armazenamento local seguro.`);
       return false;
     }
   }
 
   public async saveConfigAndConnect(config: MySqlConfig): Promise<{ success: boolean; message: string; diagnostics?: any }> {
     try {
-      // First test credentials
-      const testResult = await this.testConnection(config);
-      if (!testResult.success) {
-        return {
-          success: false,
-          message: `Falha no teste de conexão: ${testResult.message}`
-        };
+      // If password was omitted or empty, preserve existing password if available
+      if (!config.password) {
+        if (fs.existsSync(CONFIG_FILE)) {
+          try {
+            const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+            if (saved?.password) config.password = saved.password;
+          } catch {}
+        }
+        if (!config.password && process.env.DB_PASSWORD) {
+          config.password = process.env.DB_PASSWORD;
+        }
       }
 
-      // Save to data/db_config.json
+      // 1. ALWAYS persist to data/db_config.json FIRST so credentials are NEVER lost or zeroed out
       const dataDir = path.dirname(CONFIG_FILE);
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+      this.activeConfig = { ...config };
 
-      // Initialize connection with new config
+      // 2. Test credentials
+      const testResult = await this.testConnection(config);
+      if (!testResult.success) {
+        return {
+          success: false,
+          message: `Configurações salvas com sucesso em db_config.json! Porém o teste de conexão direta não pôde conectar ao host ${config.host}: ${testResult.message}. Verifique se o Acesso Remoto ao MySQL está liberado na Hostinger para este IP.`
+        };
+      }
+
+      // 3. Initialize connection with new config
       const connected = await this.init(config);
       if (!connected) {
         return {
@@ -189,6 +323,7 @@ class MySqlManager {
         diagnostics: diag
       };
     } catch (err: any) {
+      console.error('[Hostinger MySQL] Erro ao salvar configuração e conectar:', err);
       return {
         success: false,
         message: `Erro ao salvar e conectar: ${err?.message || 'Erro desconhecido'}`
@@ -201,11 +336,23 @@ class MySqlManager {
     try {
       const host = (config.host || 'localhost').trim();
       const useSsl = config.ssl ?? (process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true');
+      
+      let password = config.password;
+      if (!password && fs.existsSync(CONFIG_FILE)) {
+        try {
+          const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+          if (saved?.password) password = saved.password;
+        } catch {}
+      }
+      if (!password && process.env.DB_PASSWORD) {
+        password = process.env.DB_PASSWORD;
+      }
+
       const conn = await mysql.createConnection({
         host,
         port: Number(config.port || 3306),
         user: (config.user || 'root').trim(),
-        password: config.password || '',
+        password: password || '',
         database: (config.database || 'planiloja').trim(),
         connectTimeout: 8000,
         ssl: useSsl ? { rejectUnauthorized: false } : undefined
@@ -292,6 +439,26 @@ class MySqlManager {
       } catch (err: any) {
         console.warn('[Hostinger MySQL] Erro ao obter contagens das tabelas:', err);
       }
+    } else {
+      // Local storage fallback counts so UI never zeroes out
+      try {
+        const storeDataFile = path.join(process.cwd(), 'data', 'store_data.json');
+        if (fs.existsSync(storeDataFile)) {
+          const raw = JSON.parse(fs.readFileSync(storeDataFile, 'utf-8'));
+          counts.stores = Array.isArray(raw.stores) ? raw.stores.length : 1;
+          counts.products = Array.isArray(raw.products) ? raw.products.length : 0;
+          counts.categories = Array.isArray(raw.categories) ? raw.categories.length : 0;
+          counts.platforms = Array.isArray(raw.platforms) ? raw.platforms.length : 0;
+          counts.clicks = Array.isArray(raw.clicks) ? raw.clicks.length : 0;
+          counts.users = Array.isArray(raw.users) ? raw.users.length : 0;
+          counts.blog_posts = Array.isArray(raw.posts) ? raw.posts.length : 0;
+          counts.blog_categories = Array.isArray(raw.blogCategories) ? raw.blogCategories.length : 0;
+          counts.blog_editors = Array.isArray(raw.blogEditors) ? raw.blogEditors.length : 0;
+          counts.blog_settings = raw.blogSettings ? 1 : 0;
+          counts.contact_messages = Array.isArray(raw.contactMessages) ? raw.contactMessages.length : 0;
+          counts.institutional_pages = Array.isArray(raw.institutional) ? raw.institutional.length : 0;
+        }
+      } catch (_) {}
     }
 
     return {
@@ -667,13 +834,6 @@ class MySqlManager {
           await this.pool.query(rawMig);
         } catch {}
       }
-    }
-
-    // Permanently purge legacy fake products from database
-    try {
-      await this.pool.query(`DELETE FROM products WHERE id IN ('prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8')`);
-    } catch (cleanErr) {
-      // Ignore if table is fresh or already empty
     }
   }
 
@@ -1211,9 +1371,9 @@ class MySqlManager {
   }
 
   public async saveBlogCategory(c: BlogCategory): Promise<void> {
-    if (!this.pool || !this.isConnected) return;
+    if (!this.pool) return;
     try {
-      await this.pool.query(`
+      await this.executeQuery(`
         INSERT INTO blog_categories (id, storeId, name, slug, description, active, mostrarNoMenu, ordem)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
@@ -1232,17 +1392,17 @@ class MySqlManager {
         c.description || '',
         c.active !== false ? 1 : 0,
         c.mostrarNoMenu !== false ? 1 : 0,
-        c.ordem || 1
+        c.order || (c as any).ordem || 1
       ]);
-    } catch (err) {
+    } catch (err: any) {
       console.error('[Hostinger MySQL] Erro ao salvar categoria do blog no MySQL:', err);
     }
   }
 
   public async deleteBlogCategory(id: string): Promise<void> {
-    if (!this.pool || !this.isConnected) return;
+    if (!this.pool) return;
     try {
-      await this.pool.query('DELETE FROM blog_categories WHERE id = ?', [id]);
+      await this.executeQuery('DELETE FROM blog_categories WHERE id = ?', [id]);
     } catch (err) {
       console.error('[Hostinger MySQL] Erro ao deletar categoria do blog no MySQL:', err);
     }
@@ -1808,9 +1968,11 @@ class MySqlManager {
         if (Array.isArray(blogCats) && blogCats.length > 0) {
           result.blogCategories = blogCats.map((bc: any) => ({
             ...bc,
+            icon: bc.icon || '🏷️',
             active: Boolean(bc.active),
             mostrarNoMenu: bc.mostrarNoMenu !== undefined ? Boolean(bc.mostrarNoMenu) : true,
-            ordem: Number(bc.ordem) || 1
+            ordem: Number(bc.ordem || bc.order) || 1,
+            order: Number(bc.ordem || bc.order) || 1
           }));
         }
       } catch (err) {

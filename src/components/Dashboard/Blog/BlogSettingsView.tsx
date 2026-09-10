@@ -2766,10 +2766,10 @@ export default function BlogSettingsView({
                 >
                   <option value="">-- Selecione um artigo publicado --</option>
                   {blogPosts
-                    .filter(p => p.published !== false && (!p.sidebarBanner?.imageUrl || p.id === selectedArticleId))
+                    .filter(p => p.published !== false)
                     .map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.title} {p.sidebarBanner?.imageUrl ? '★ (Com banner)' : ''}
+                        {p.title} {p.sidebarBanner?.imageUrl ? '★ (Possui Banner)' : ''}
                       </option>
                     ))}
                 </select>

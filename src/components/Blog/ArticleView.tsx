@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BlogPost, StoreConfig, Product, BlogSettings, BlogEditor, ArticleFooterAd } from '../../types';
-import { recordBlogPostView, fetchPublicBlogPosts, fetchStoreProducts, fetchPublicBlogSettings, fetchPublicBlogEditors } from '../../api/client';
+import { recordBlogPostView, fetchPublicBlogPosts, fetchStoreProducts, fetchPublicBlogSettings, fetchPublicBlogEditors, getCachedData } from '../../api/client';
 import { normalizeImageUrl } from '../../utils';
 import {
   ArrowLeft,
@@ -49,10 +49,10 @@ export default function ArticleView({
   onNavigateToInstitutional,
   onNavigateToContact
 }: ArticleViewProps) {
-  const [allPosts, setAllPosts] = useState<BlogPost[]>([]);
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [blogSettings, setBlogSettings] = useState<BlogSettings | null>(initialBlogSettings || null);
-  const [blogEditors, setBlogEditors] = useState<BlogEditor[]>([]);
+  const [allPosts, setAllPosts] = useState<BlogPost[]>(() => getCachedData<BlogPost[]>(`public_blog_posts_${storeSlug}`) || []);
+  const [allProducts, setAllProducts] = useState<Product[]>(() => getCachedData<Product[]>(`store_products_${storeSlug}`) || []);
+  const [blogSettings, setBlogSettings] = useState<BlogSettings | null>(() => initialBlogSettings || getCachedData<BlogSettings>(`public_blog_settings_${storeSlug}`) || null);
+  const [blogEditors, setBlogEditors] = useState<BlogEditor[]>(() => getCachedData<BlogEditor[]>(`public_blog_editors_${storeSlug}`) || []);
   const [copied, setCopied] = useState(false);
   const [liked, setLiked] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -72,8 +72,20 @@ export default function ArticleView({
         setBlogSettings(e.detail);
       }
     }
+    function handlePostUpdated(e: any) {
+      const updatedPost = e?.detail as BlogPost;
+      if (updatedPost) {
+        setAllPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+      }
+    }
     window.addEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
-    return () => window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
+    window.addEventListener('blog-post-updated', handlePostUpdated as EventListener);
+    window.addEventListener('blog-posts-updated', handlePostUpdated as EventListener);
+    return () => {
+      window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
+      window.removeEventListener('blog-post-updated', handlePostUpdated as EventListener);
+      window.removeEventListener('blog-posts-updated', handlePostUpdated as EventListener);
+    };
   }, []);
 
   useEffect(() => {
@@ -929,7 +941,9 @@ export default function ArticleView({
               const rawBanner = currentLivePost.sidebarBanner?.imageUrl ? currentLivePost.sidebarBanner : (post.sidebarBanner?.imageUrl ? post.sidebarBanner : null);
               const banner = (rawBanner && rawBanner.imageUrl && rawBanner.enabled !== false)
                 ? rawBanner
-                : null;
+                : (blogSettings?.articleSidebarBanner?.enabled !== false && blogSettings?.articleSidebarBanner?.imageUrl
+                    ? blogSettings.articleSidebarBanner
+                    : null);
 
               if (!banner?.imageUrl) return null;
 
