@@ -29,9 +29,18 @@ export interface MySqlConfig {
   password?: string;
   database?: string;
   ssl?: boolean;
+  socketPath?: string;
 }
 
 const CONFIG_FILE = path.join(process.cwd(), 'data', 'db_config.json');
+
+// Known MySQL/MariaDB Unix socket paths on Hostinger / cPanel / Linux systems
+const KNOWN_UNIX_SOCKETS = [
+  '/var/run/mysqld/mysqld.sock',
+  '/tmp/mysql.sock',
+  '/var/lib/mysql/mysql.sock',
+  '/run/mysqld/mysqld.sock'
+];
 
 class MySqlManager {
   private pool: mysql.Pool | null = null;
@@ -39,6 +48,7 @@ class MySqlManager {
   private connectionError: string | null = null;
   private activeConfig: (MySqlConfig & { password?: string }) | null = null;
   private keepAliveInterval: any = null;
+  private resolvedSocketPath: string | null = null;
 
   public isReady(): boolean {
     return this.isConnected && this.pool !== null;
@@ -56,8 +66,90 @@ class MySqlManager {
       host: this.activeConfig?.host || process.env.DB_HOST || 'Local / Não configurado',
       database: this.activeConfig?.database || process.env.DB_NAME || 'store_data.json',
       user: this.activeConfig?.user || process.env.DB_USER || 'Nenhum',
-      port: this.activeConfig?.port || process.env.DB_PORT || 3306
+      port: this.activeConfig?.port || process.env.DB_PORT || 3306,
+      socket: this.resolvedSocketPath || undefined
     };
+  }
+
+  private buildCandidateConfigs(cfg: MySqlConfig): Array<mysql.PoolOptions & { _desc: string }> {
+    const rawHost = (cfg.host || '').trim();
+    const port = Number(cfg.port || 3306);
+    const user = (cfg.user || 'root').trim();
+    const password = cfg.password || '';
+    const database = (cfg.database || '').trim();
+    const useSsl = Boolean(cfg.ssl);
+
+    const baseOptions: mysql.PoolOptions = {
+      user,
+      password,
+      database,
+      waitForConnections: true,
+      connectionLimit: 8,
+      maxIdle: 4,
+      idleTimeout: 30000,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 5000,
+      connectTimeout: 8000,
+      ssl: useSsl ? { rejectUnauthorized: false } : undefined
+    };
+
+    const isLocal = !rawHost || rawHost === 'localhost' || rawHost === '127.0.0.1' || rawHost === '::1';
+
+    if (isLocal) {
+      const candidates: Array<mysql.PoolOptions & { _desc: string }> = [];
+
+      // 1. Primary: IPv4 127.0.0.1 (Bypasses Node.js IPv6 ::1 lookup issues on Linux)
+      candidates.push({
+        ...baseOptions,
+        host: '127.0.0.1',
+        port,
+        _desc: `TCP 127.0.0.1:${port}`
+      });
+
+      // 2. Check existing known UNIX sockets (standard in Hostinger, cPanel, CloudLinux)
+      for (const sock of KNOWN_UNIX_SOCKETS) {
+        if (fs.existsSync(sock)) {
+          candidates.push({
+            ...baseOptions,
+            socketPath: sock,
+            _desc: `Unix Socket (${sock})`
+          });
+        }
+      }
+
+      // 3. Fallback: standard localhost
+      candidates.push({
+        ...baseOptions,
+        host: 'localhost',
+        port,
+        _desc: `TCP localhost:${port}`
+      });
+
+      // 4. Try common unix sockets even if fs check is restricted
+      for (const sock of KNOWN_UNIX_SOCKETS) {
+        if (!candidates.some(c => c.socketPath === sock)) {
+          candidates.push({
+            ...baseOptions,
+            socketPath: sock,
+            _desc: `Unix Socket (${sock})`
+          });
+        }
+      }
+
+      return candidates;
+    }
+
+    // Remote Host (e.g., Hostinger server IP or hostname)
+    return [
+      {
+        ...baseOptions,
+        host: rawHost,
+        port,
+        connectTimeout: 12000,
+        _desc: `TCP ${rawHost}:${port}`
+      }
+    ];
   }
 
   public async reconnect(): Promise<boolean> {
@@ -65,38 +157,39 @@ class MySqlManager {
     try {
       if (this.pool) {
         try { await this.pool.end(); } catch (_) {}
+        this.pool = null;
       }
-      const { host, port, user, database, ssl, password } = this.activeConfig;
+      
+      const candidates = this.buildCandidateConfigs(this.activeConfig);
+      let lastErr: any = null;
 
-      this.pool = mysql.createPool({
-        host,
-        port,
-        user,
-        password: password || '',
-        database,
-        waitForConnections: true,
-        connectionLimit: 10,
-        maxIdle: 5,
-        idleTimeout: 60000,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 10000,
-        connectTimeout: 20000,
-        ssl: ssl ? { rejectUnauthorized: false } : undefined
-      });
+      for (const candidate of candidates) {
+        try {
+          const testPool = mysql.createPool(candidate);
+          await testPool.query('SELECT 1 as test');
+          
+          this.pool = testPool;
+          this.resolvedSocketPath = candidate.socketPath || null;
+          this.isConnected = true;
+          this.connectionError = null;
 
-      (this.pool as any).on('error', (err: any) => {
-        console.warn('[Hostinger MySQL Pool Event]', err?.code || err?.message);
-        if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
-          this.reconnect().catch(() => {});
+          (this.pool as any).on('error', (err: any) => {
+            console.warn('[Hostinger MySQL Pool Event]', err?.code || err?.message);
+            if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
+              this.reconnect().catch(() => {});
+            }
+          });
+
+          console.log(`[Hostinger MySQL] Conexão restabelecida com sucesso via ${candidate._desc}.`);
+          return true;
+        } catch (err) {
+          lastErr = err;
         }
-      });
+      }
 
-      await this.pool.query('SELECT 1 as test');
-      this.isConnected = true;
-      this.connectionError = null;
-      console.log('[Hostinger MySQL] Conexão restabelecida automaticamente com sucesso.');
-      return true;
+      this.isConnected = false;
+      this.connectionError = lastErr?.message || 'Falha ao restabelecer conexão MySQL';
+      return false;
     } catch (err: any) {
       this.isConnected = false;
       this.connectionError = err?.message || 'Falha ao restabelecer conexão MySQL';
@@ -173,6 +266,7 @@ class MySqlManager {
     let database = config.database || savedConfig.database || process.env.DB_NAME || process.env.MYSQL_DATABASE;
     let port = Number(config.port || savedConfig.port || process.env.DB_PORT || process.env.MYSQL_PORT || 3306);
     let useSsl = config.ssl ?? savedConfig.ssl ?? (process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true');
+    let socketPath = config.socketPath || savedConfig.socketPath || process.env.DB_SOCKET;
 
     // 3. Fallback to DATABASE_URL / MYSQL_URL if host or database is missing
     const dbUrl = process.env.DATABASE_URL || process.env.MYSQL_URL;
@@ -208,41 +302,44 @@ class MySqlManager {
         try {
           await this.pool.end();
         } catch (_) {}
+        this.pool = null;
       }
 
-      this.activeConfig = { host, user, database, port, ssl: useSsl, password };
+      this.activeConfig = { host, user, database, port, ssl: useSsl, password, socketPath };
+      const candidates = this.buildCandidateConfigs(this.activeConfig);
+      let lastErr: any = null;
+      let connectedCandidate: any = null;
 
-      this.pool = mysql.createPool({
-        host,
-        port,
-        user,
-        password,
-        database,
-        waitForConnections: true,
-        connectionLimit: 5,
-        maxIdle: 2,
-        idleTimeout: 30000,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 15000,
-        connectTimeout: 20000,
-        ssl: useSsl ? { rejectUnauthorized: false } : undefined
-      });
+      for (const candidate of candidates) {
+        try {
+          const testPool = mysql.createPool(candidate);
+          await testPool.query('SELECT 1 as test');
+          
+          this.pool = testPool;
+          this.resolvedSocketPath = candidate.socketPath || null;
+          this.isConnected = true;
+          this.connectionError = null;
+          connectedCandidate = candidate;
 
-      (this.pool as any).on('error', (err: any) => {
-        console.warn('[Hostinger MySQL Pool Error]', err?.code || err?.message);
-        if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET') {
-          this.reconnect().catch(() => {});
+          (this.pool as any).on('error', (err: any) => {
+            console.warn('[Hostinger MySQL Pool Error]', err?.code || err?.message);
+            if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
+              this.reconnect().catch(() => {});
+            }
+          });
+
+          console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' via ${candidate._desc}. Conexão persistente ativa.`);
+          break;
+        } catch (err: any) {
+          lastErr = err;
         }
-      });
+      }
 
-      // Test connection once on init
-      await this.pool.query('SELECT 1 as test');
-      this.isConnected = true;
-      this.connectionError = null;
-      console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' em ${host}:${port}. Conexão persistente ativa.`);
+      if (!this.isConnected || !this.pool) {
+        throw lastErr || new Error('Não foi possível estabelecer conexão MySQL com nenhum dos alvos configurados.');
+      }
 
-      // Setup keep-alive ping every 25s so Hostinger wait_timeout never closes the socket
+      // Setup keep-alive ping every 20s so Hostinger wait_timeout never closes the socket
       this.keepAliveInterval = setInterval(async () => {
         if (this.pool && this.isConnected) {
           try {
@@ -252,17 +349,19 @@ class MySqlManager {
             await this.reconnect();
           }
         }
-      }, 25000);
+      }, 20000);
       if (this.keepAliveInterval?.unref) {
         this.keepAliveInterval.unref();
       }
 
-      // Ensure tables exist
+      // Ensure all required tables exist
       await this.createTablesIfNotExist();
+      await this.ensureBlogTablesExist();
+      await this.ensureInstitutionalTableExist();
       return true;
     } catch (err: any) {
       this.isConnected = false;
-      if (err?.code === 'ECONNREFUSED' && (host === 'localhost' || host === '127.0.0.1')) {
+      if (err?.code === 'ECONNREFUSED' && (!host || host === 'localhost' || host === '127.0.0.1')) {
         this.connectionError = `Não foi possível conectar em 'localhost:3306' dentro do container da nuvem. Na Hostinger (onde o MySQL roda no mesmo servidor), 'localhost' funciona automaticamente. Para conectar aqui no preview, insira o IP do seu servidor Hostinger na aba Banco de Dados e ative 'Acesso Remoto MySQL' no hPanel da Hostinger.`;
       } else {
         this.connectionError = err?.message || 'Falha ao conectar ao banco MySQL';
@@ -287,7 +386,7 @@ class MySqlManager {
         }
       }
 
-      // 1. ALWAYS persist to data/db_config.json FIRST so credentials are NEVER lost or zeroed out
+      // 1. ALWAYS persist to data/db_config.json FIRST so credentials are NEVER lost
       const dataDir = path.dirname(CONFIG_FILE);
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -295,12 +394,12 @@ class MySqlManager {
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
       this.activeConfig = { ...config };
 
-      // 2. Test credentials
+      // 2. Test credentials using candidate configs (IPv4, socket, remote)
       const testResult = await this.testConnection(config);
       if (!testResult.success) {
         return {
           success: false,
-          message: `Configurações salvas com sucesso em db_config.json! Porém o teste de conexão direta não pôde conectar ao host ${config.host}: ${testResult.message}. Verifique se o Acesso Remoto ao MySQL está liberado na Hostinger para este IP.`
+          message: `Configurações salvas em db_config.json! Porém o teste de conexão direta não pôde conectar ao host ${config.host || 'localhost'}: ${testResult.message}. Verifique se o Acesso Remoto ao MySQL está liberado na Hostinger para este IP.`
         };
       }
 
@@ -312,9 +411,6 @@ class MySqlManager {
           message: `Credenciais salvas, mas houve erro ao abrir o pool MySQL: ${this.connectionError}`
         };
       }
-
-      // Populate tables with demo data if needed
-      await this.seedAllDemoData(false);
 
       const diag = await this.getLiveDiagnostics();
       return {
@@ -334,39 +430,37 @@ class MySqlManager {
   public async testConnection(config: MySqlConfig): Promise<{ success: boolean; message: string; latencyMs?: number }> {
     const startTime = Date.now();
     try {
-      const host = (config.host || 'localhost').trim();
-      const useSsl = config.ssl ?? (process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true');
-      
-      let password = config.password;
-      if (!password && fs.existsSync(CONFIG_FILE)) {
+      const candidates = this.buildCandidateConfigs(config);
+      let lastErr: any = null;
+
+      for (const candidate of candidates) {
         try {
-          const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-          if (saved?.password) password = saved.password;
-        } catch {}
+          const conn = await mysql.createConnection({
+            host: candidate.host,
+            port: candidate.port,
+            user: candidate.user,
+            password: candidate.password,
+            database: candidate.database,
+            socketPath: candidate.socketPath,
+            ssl: candidate.ssl,
+            connectTimeout: candidate.connectTimeout || 8000
+          });
+
+          await conn.query('SELECT 1');
+          await conn.end();
+
+          const latencyMs = Date.now() - startTime;
+          return {
+            success: true,
+            message: `Conexão bem-sucedida com o servidor MySQL via ${candidate._desc}! (Latência: ${latencyMs}ms)`,
+            latencyMs
+          };
+        } catch (err) {
+          lastErr = err;
+        }
       }
-      if (!password && process.env.DB_PASSWORD) {
-        password = process.env.DB_PASSWORD;
-      }
 
-      const conn = await mysql.createConnection({
-        host,
-        port: Number(config.port || 3306),
-        user: (config.user || 'root').trim(),
-        password: password || '',
-        database: (config.database || 'planiloja').trim(),
-        connectTimeout: 8000,
-        ssl: useSsl ? { rejectUnauthorized: false } : undefined
-      });
-
-      await conn.query('SELECT 1');
-      await conn.end();
-
-      const latencyMs = Date.now() - startTime;
-      return {
-        success: true,
-        message: `Conexão bem-sucedida com o servidor MySQL! (Latência: ${latencyMs}ms)`,
-        latencyMs
-      };
+      throw lastErr || new Error('Falha ao conectar.');
     } catch (err: any) {
       let friendlyMessage = err?.message || 'Não foi possível conectar ao banco de dados.';
 

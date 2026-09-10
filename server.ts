@@ -28,8 +28,16 @@ async function startServer() {
         await mysqlManager.ensureBlogTablesExist();
         await mysqlManager.ensureInstitutionalTableExist();
         const mysqlData = await mysqlManager.loadAllDataFromMySql();
-        if (mysqlData) {
+
+        if (mysqlData && Array.isArray(mysqlData.products) && mysqlData.products.length > 0) {
           db.hydrateFromMySql(mysqlData);
+          console.log(`[Hostinger MySQL] Carregados com sucesso ${mysqlData.products.length} produto(s) e ${mysqlData.stores?.length || 1} loja(s) do MySQL.`);
+        } else {
+          // MySQL is connected but has empty tables (fresh database setup on Hostinger)
+          console.log('[Hostinger MySQL] Banco MySQL recém-conectado está vazio. Populando tabelas automaticamente com o catálogo local...');
+          const allLocalData: any = db.getAllData();
+          await mysqlManager.syncAllData(allLocalData);
+          console.log('[Hostinger MySQL] Catálogo, categorias, banners e blog gravados com sucesso no MySQL da Hostinger!');
         }
       } catch (e: any) {
         console.warn('[Hostinger MySQL] Falha ao sincronizar estado inicial:', e?.message || e);
@@ -921,9 +929,14 @@ async function startServer() {
       });
 
       if (result.success) {
-        // Sync current store and products to the newly connected MySQL
-        const allData = db.getAllData();
-        await mysqlManager.syncAllData(allData);
+        // Intelligently hydrate from MySQL if existing data exists, or sync local data if MySQL is fresh
+        const mysqlData = await mysqlManager.loadAllDataFromMySql();
+        if (mysqlData && Array.isArray(mysqlData.products) && mysqlData.products.length > 0) {
+          db.hydrateFromMySql(mysqlData);
+        } else {
+          const allData: any = db.getAllData();
+          await mysqlManager.syncAllData(allData);
+        }
       }
 
       res.json(result);
