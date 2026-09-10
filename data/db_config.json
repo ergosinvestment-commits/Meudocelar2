@@ -1,8 +1,8 @@
 {
-  "host": "localhost",
+  "host": "",
   "port": 3306,
-  "database": "u566136191_meudocelar",
-  "user": "u566136191_meudocelar",
-  "password": "Second*-2112",
+  "database": "",
+  "user": "",
+  "password": "",
   "ssl": false
 }
