@@ -84,13 +84,13 @@ class MySqlManager {
       password,
       database,
       waitForConnections: true,
-      connectionLimit: 8,
-      maxIdle: 4,
-      idleTimeout: 30000,
+      connectionLimit: 10,
+      maxIdle: 10,
+      idleTimeout: 60000,
       queueLimit: 0,
       enableKeepAlive: true,
       keepAliveInitialDelay: 5000,
-      connectTimeout: 8000,
+      connectTimeout: 15000,
       ssl: useSsl ? { rejectUnauthorized: false } : undefined
     };
 
@@ -177,6 +177,9 @@ class MySqlManager {
             console.warn('[Hostinger MySQL Pool Event]', err?.code || err?.message);
             if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
               this.reconnect().catch(() => {});
+            } else if (err?.code === 'ENOTFOUND' || err?.code === 'EHOSTUNREACH') {
+              this.isConnected = false;
+              this.connectionError = `Host MySQL inacessível: ${err?.message || ''}`;
             }
           });
 
@@ -325,6 +328,9 @@ class MySqlManager {
             console.warn('[Hostinger MySQL Pool Error]', err?.code || err?.message);
             if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
               this.reconnect().catch(() => {});
+            } else if (err?.code === 'ENOTFOUND' || err?.code === 'EHOSTUNREACH') {
+              this.isConnected = false;
+              this.connectionError = `Host MySQL inacessível: ${err?.message || ''}`;
             }
           });
 
@@ -339,7 +345,7 @@ class MySqlManager {
         throw lastErr || new Error('Não foi possível estabelecer conexão MySQL com nenhum dos alvos configurados.');
       }
 
-      // Setup keep-alive ping every 20s so Hostinger wait_timeout never closes the socket
+      // Setup keep-alive ping every 15s so Hostinger wait_timeout never closes the socket
       this.keepAliveInterval = setInterval(async () => {
         if (this.pool && this.isConnected) {
           try {
@@ -349,7 +355,7 @@ class MySqlManager {
             await this.reconnect();
           }
         }
-      }, 20000);
+      }, 15000);
       if (this.keepAliveInterval?.unref) {
         this.keepAliveInterval.unref();
       }
