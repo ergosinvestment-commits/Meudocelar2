@@ -315,31 +315,37 @@ export default function BlogHome({
                       <span>Todas as Categorias</span>
                       <span className="text-[10px] font-normal text-neutral-400">({posts.length})</span>
                     </button>
-                    {blogCategories.filter(c => c.active !== false).map((cat) => {
-                      const isCatActive = activeCategory === cat.name;
-                      return (
-                        <button
-                          key={cat.id || cat.name}
-                          type="button"
-                          onClick={() => {
-                            setActiveCategory(cat.name);
-                            setCategoriasOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-4 py-3 text-xs sm:text-sm font-bold uppercase transition text-left cursor-pointer ${
-                            isCatActive ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-neutral-50 text-neutral-800'
-                          }`}
-                          style={isCatActive ? { color: primaryColor } : {}}
-                        >
-                          <div className="flex items-center gap-2.5 truncate">
-                            <span className="text-base">{cat.icon || '📑'}</span>
-                            <span className="truncate">{cat.name}</span>
-                          </div>
-                          {cat.mostrarNoMenu === false && (
-                            <span className="text-[9px] font-medium bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded">Apenas no Menu</span>
-                          )}
-                        </button>
-                      );
-                    })}
+                    {blogCategories
+                      .filter(c => {
+                        const val = c.active ?? (c as any).ativo;
+                        return val !== false && val !== 0 && val !== '0' && val !== 'false';
+                      })
+                      .map((cat) => {
+                        const isSelected = activeCategory === cat.name;
+                        const inTopMenu = cat.mostrarNoMenu !== false && (cat as any).mostrarNoMenu !== 0 && (cat as any).mostrarNoMenu !== '0' && (cat as any).mostrarNoMenu !== 'false';
+                        return (
+                          <button
+                            key={cat.id || cat.name}
+                            type="button"
+                            onClick={() => {
+                              setActiveCategory(cat.name);
+                              setCategoriasOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-4 py-3 text-xs sm:text-sm font-bold uppercase transition text-left cursor-pointer ${
+                              isSelected ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-neutral-50 text-neutral-800'
+                            }`}
+                            style={isSelected ? { color: primaryColor } : {}}
+                          >
+                            <div className="flex items-center gap-2.5 truncate">
+                              <span className="text-base">{cat.icon || '📑'}</span>
+                              <span className="truncate">{cat.name}</span>
+                            </div>
+                            {!inTopMenu && (
+                              <span className="text-[9px] font-semibold bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded tracking-normal">Apenas em Categorias</span>
+                            )}
+                          </button>
+                        );
+                      })}
                   </div>
                 </div>
               )}
@@ -362,7 +368,11 @@ export default function BlogHome({
 
             {/* Top Bar Categories (mostrarNoMenu !== false) */}
             {blogCategories
-              .filter(c => c.active !== false && c.mostrarNoMenu !== false)
+              .filter(c => {
+                const isActive = c.active !== false && (c as any).ativo !== false && (c as any).active !== 0 && (c as any).active !== 'false';
+                const inMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false';
+                return isActive && inMenu;
+              })
               .map((cat) => (
                 <button
                   key={cat.id || cat.name}

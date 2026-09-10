@@ -2706,9 +2706,19 @@ class DatabaseManager {
 
     let list = this.data.blogCategories.filter(c => !c.storeId || c.storeId === storeId || c.storeId === 'store-1');
     if (onlyActive) {
-      list = list.filter(c => c.active !== false);
+      list = list.filter(c => c.active !== false && (c as any).ativo !== false && (c as any).active !== 0 && (c as any).active !== 'false');
     }
-    return list.sort((a, b) => (a.order || 999) - (b.order || 999));
+    return list.map(c => {
+      const isMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false';
+      const isActive = c.active !== false && (c as any).ativo !== false && (c as any).active !== 0 && (c as any).active !== 'false';
+      return {
+        ...c,
+        icon: c.icon || (c as any).icone || '📑',
+        active: isActive,
+        mostrarNoMenu: isMenu,
+        order: Number(c.order || (c as any).ordem) || 1
+      };
+    }).sort((a, b) => (a.order || 999) - (b.order || 999));
   }
 
   public createBlogCategory(storeSlug: string, data: Partial<BlogCategory>): BlogCategory {
@@ -2722,6 +2732,14 @@ class DatabaseManager {
       ? data.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
       : (data.name || 'nova-categoria').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
+    const isMenu = data.mostrarNoMenu !== undefined
+      ? Boolean(data.mostrarNoMenu && data.mostrarNoMenu !== ('false' as any))
+      : true;
+
+    const isActive = data.active !== undefined
+      ? Boolean(data.active && data.active !== ('false' as any))
+      : true;
+
     const newCat: BlogCategory = {
       id: `blog-cat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       storeId,
@@ -2730,8 +2748,8 @@ class DatabaseManager {
       icon: data.icon?.trim() || '📑',
       description: data.description?.trim() || '',
       order: typeof data.order === 'number' ? data.order : this.data.blogCategories.length + 1,
-      active: data.active !== false,
-      mostrarNoMenu: data.mostrarNoMenu !== undefined ? Boolean(data.mostrarNoMenu) : true,
+      active: isActive,
+      mostrarNoMenu: isMenu,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -2769,6 +2787,14 @@ class DatabaseManager {
       ? data.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
       : (newName || current.name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
+    const isMenu = data.mostrarNoMenu !== undefined
+      ? Boolean(data.mostrarNoMenu && data.mostrarNoMenu !== ('false' as any))
+      : (current.mostrarNoMenu !== false && (current as any).mostrarNoMenu !== 0 && (current as any).mostrarNoMenu !== '0' && (current as any).mostrarNoMenu !== 'false');
+
+    const isActive = data.active !== undefined
+      ? Boolean(data.active && data.active !== ('false' as any))
+      : (current.active !== false && (current as any).active !== 0 && (current as any).active !== '0' && (current as any).active !== 'false');
+
     const updated: BlogCategory = {
       ...current,
       ...data,
@@ -2778,8 +2804,8 @@ class DatabaseManager {
       icon: data.icon?.trim() || current.icon || '📑',
       description: data.description !== undefined ? data.description.trim() : (current.description || ''),
       order: typeof data.order === 'number' ? data.order : (current.order || 1),
-      active: data.active !== undefined ? Boolean(data.active) : (current.active !== false),
-      mostrarNoMenu: data.mostrarNoMenu !== undefined ? Boolean(data.mostrarNoMenu) : (current.mostrarNoMenu !== false),
+      active: isActive,
+      mostrarNoMenu: isMenu,
       updatedAt: new Date().toISOString()
     };
 

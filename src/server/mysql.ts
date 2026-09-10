@@ -766,6 +766,7 @@ class MySqlManager {
         storeId VARCHAR(64) NOT NULL,
         name VARCHAR(128) NOT NULL,
         slug VARCHAR(191) NOT NULL,
+        icon VARCHAR(64) DEFAULT '📑',
         description TEXT,
         active TINYINT(1) DEFAULT 1,
         mostrarNoMenu TINYINT(1) DEFAULT 1,
@@ -916,7 +917,9 @@ class MySqlManager {
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS endereco TEXT',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS email VARCHAR(255)',
       'ALTER TABLE blog_settings ADD COLUMN IF NOT EXISTS articleSidebarBanner LONGTEXT',
-      'ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS sidebarBanner LONGTEXT'
+      'ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS sidebarBanner LONGTEXT',
+      'ALTER TABLE blog_categories ADD COLUMN IF NOT EXISTS icon VARCHAR(64) DEFAULT \'📑\'',
+      'ALTER TABLE blog_categories ADD COLUMN IF NOT EXISTS mostrarNoMenu TINYINT(1) DEFAULT 1'
     ];
     for (const mig of migrations) {
       try {
@@ -1467,12 +1470,16 @@ class MySqlManager {
   public async saveBlogCategory(c: BlogCategory): Promise<void> {
     if (!this.pool) return;
     try {
+      const inMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false' ? 1 : 0;
+      const isActive = c.active !== false && (c as any).active !== 0 && (c as any).active !== '0' && (c as any).active !== 'false' ? 1 : 0;
+
       await this.executeQuery(`
-        INSERT INTO blog_categories (id, storeId, name, slug, description, active, mostrarNoMenu, ordem)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO blog_categories (id, storeId, name, slug, icon, description, active, mostrarNoMenu, ordem)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           name=VALUES(name),
           slug=VALUES(slug),
+          icon=VALUES(icon),
           description=VALUES(description),
           active=VALUES(active),
           mostrarNoMenu=VALUES(mostrarNoMenu),
@@ -1483,9 +1490,10 @@ class MySqlManager {
         c.storeId || 'store-1',
         c.name,
         c.slug,
+        c.icon || '📑',
         c.description || '',
-        c.active !== false ? 1 : 0,
-        c.mostrarNoMenu !== false ? 1 : 0,
+        isActive,
+        inMenu,
         c.order || (c as any).ordem || 1
       ]);
     } catch (err: any) {
@@ -2063,8 +2071,9 @@ class MySqlManager {
           result.blogCategories = blogCats.map((bc: any) => ({
             ...bc,
             icon: bc.icon || '🏷️',
-            active: Boolean(bc.active),
-            mostrarNoMenu: bc.mostrarNoMenu !== undefined ? Boolean(bc.mostrarNoMenu) : true,
+            active: bc.active === 1 || bc.active === true || bc.active === '1' || bc.active === undefined,
+            mostrarNoMenu: (bc.mostrarNoMenu === 1 || bc.mostrarNoMenu === true || bc.mostrarNoMenu === '1') ||
+                           (bc.mostrarNoMenu === undefined && (bc.exibirNoMenu === 1 || bc.exibirNoMenu === true || bc.exibirNoMenu === undefined)),
             ordem: Number(bc.ordem || bc.order) || 1,
             order: Number(bc.ordem || bc.order) || 1
           }));

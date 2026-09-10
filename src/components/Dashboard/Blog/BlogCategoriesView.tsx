@@ -25,6 +25,23 @@ interface BlogCategoriesViewProps {
   onCategoriesUpdated?: () => void;
 }
 
+// Helpers robustos para interpretar booleans evitando problemas com 0 !== false ou strings
+function isCatInMenu(cat: BlogCategory | any): boolean {
+  if (!cat) return true;
+  const val = cat.mostrarNoMenu !== undefined ? cat.mostrarNoMenu : cat.exibirNoMenu;
+  if (val === undefined || val === null) return true;
+  if (val === false || val === 0 || val === '0' || val === 'false') return false;
+  return true;
+}
+
+function isCatActive(cat: BlogCategory | any): boolean {
+  if (!cat) return true;
+  const val = cat.active !== undefined ? cat.active : cat.ativo;
+  if (val === undefined || val === null) return true;
+  if (val === false || val === 0 || val === '0' || val === 'false') return false;
+  return true;
+}
+
 export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: BlogCategoriesViewProps) {
   const [categories, setCategories] = useState<BlogCategory[]>([]);
   const [posts, setPosts] = useState<BlogPost[]>([]);
@@ -33,6 +50,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<BlogCategory | null>(null);
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [categoryToDelete, setCategoryToDelete] = useState<BlogCategory | null>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -85,8 +103,8 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
     setFormIcon(cat.icon || '🏷️');
     setFormDescription(cat.description || '');
     setFormOrder(cat.order || 1);
-    setFormActive(cat.active !== false);
-    setFormMostrarNoMenu(cat.mostrarNoMenu !== false);
+    setFormActive(isCatActive(cat));
+    setFormMostrarNoMenu(isCatInMenu(cat));
     setIsModalOpen(true);
   }
 
@@ -109,6 +127,91 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
     }
   }
 
+  async function handleToggleMenu(cat: BlogCategory) {
+    const currentInMenu = isCatInMenu(cat);
+    const nextInMenu = !currentInMenu;
+
+    // Atualização otimista imediata na UI
+    setCategories(prev =>
+      prev.map(c => (c.id === cat.id ? { ...c, mostrarNoMenu: nextInMenu } : c))
+    );
+
+    try {
+      setTogglingId(cat.id);
+      const payload: Partial<BlogCategory> = {
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        icon: cat.icon || '📑',
+        description: cat.description || '',
+        order: cat.order || 1,
+        active: isCatActive(cat),
+        mostrarNoMenu: nextInMenu
+      };
+
+      const saved = await saveAdminBlogCategory(storeSlug, payload);
+      setCategories(prev => prev.map(c => (c.id === saved.id ? saved : c)));
+      setFeedback({
+        type: 'success',
+        message: nextInMenu
+          ? `Categoria "${cat.name}" agora é exibida no menu superior do Blog!`
+          : `Categoria "${cat.name}" removida do menu superior (fica visível no botão "Categorias").`
+      });
+      if (onCategoriesUpdated) onCategoriesUpdated();
+      setTimeout(() => setFeedback(null), 3500);
+    } catch (err: any) {
+      // Reverte em caso de erro
+      setCategories(prev =>
+        prev.map(c => (c.id === cat.id ? { ...c, mostrarNoMenu: currentInMenu } : c))
+      );
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao alterar exibição no menu.' });
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  async function handleToggleActive(cat: BlogCategory) {
+    const currentActive = isCatActive(cat);
+    const nextActive = !currentActive;
+
+    // Atualização otimista imediata
+    setCategories(prev =>
+      prev.map(c => (c.id === cat.id ? { ...c, active: nextActive } : c))
+    );
+
+    try {
+      setTogglingId(cat.id);
+      const payload: Partial<BlogCategory> = {
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        icon: cat.icon || '📑',
+        description: cat.description || '',
+        order: cat.order || 1,
+        active: nextActive,
+        mostrarNoMenu: isCatInMenu(cat)
+      };
+
+      const saved = await saveAdminBlogCategory(storeSlug, payload);
+      setCategories(prev => prev.map(c => (c.id === saved.id ? saved : c)));
+      setFeedback({
+        type: 'success',
+        message: nextActive
+          ? `Categoria "${cat.name}" ativada!`
+          : `Categoria "${cat.name}" desativada!`
+      });
+      if (onCategoriesUpdated) onCategoriesUpdated();
+      setTimeout(() => setFeedback(null), 3500);
+    } catch (err: any) {
+      setCategories(prev =>
+        prev.map(c => (c.id === cat.id ? { ...c, active: currentActive } : c))
+      );
+      setFeedback({ type: 'error', message: err?.message || 'Erro ao alterar status da categoria.' });
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   async function handleSaveCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!formName.trim()) {
@@ -127,8 +230,8 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
         icon: formIcon.trim() || '📑',
         description: formDescription.trim(),
         order: Number(formOrder) || 1,
-        active: formActive,
-        mostrarNoMenu: formMostrarNoMenu
+        active: Boolean(formActive),
+        mostrarNoMenu: Boolean(formMostrarNoMenu)
       };
 
       const saved = await saveAdminBlogCategory(storeSlug, payload);
@@ -257,6 +360,9 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
             const articleCount = posts.filter(
               p => p.category?.toLowerCase() === cat.name.toLowerCase()
             ).length;
+            const inMenu = isCatInMenu(cat);
+            const isActive = isCatActive(cat);
+            const isToggling = togglingId === cat.id;
 
             return (
               <div
@@ -279,25 +385,37 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          cat.active !== false
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-neutral-100 text-neutral-500'
+                    <div className="flex flex-col items-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleActive(cat)}
+                        disabled={isToggling}
+                        title={isActive ? 'Clique para desativar' : 'Clique para ativar'}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition active:scale-95 ${
+                          isActive
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
                         }`}
                       >
-                        {cat.active !== false ? 'Ativa' : 'Inativa'}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[9px] font-semibold ${
-                          cat.mostrarNoMenu !== false
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-amber-50 text-amber-800'
+                        {isActive ? '● Ativa' : '○ Inativa'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleMenu(cat)}
+                        disabled={isToggling}
+                        title={inMenu ? 'Clique para ocultar do menu superior' : 'Clique para exibir no menu superior'}
+                        className={`px-2 py-0.5 rounded-full text-[9px] font-semibold cursor-pointer transition active:scale-95 flex items-center gap-1 ${
+                          inMenu
+                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-200'
+                            : 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                         }`}
                       >
-                        {cat.mostrarNoMenu !== false ? 'No Menu Superior' : 'Apenas em Categorias'}
-                      </span>
+                        {isToggling ? (
+                          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                        ) : null}
+                        <span>{inMenu ? '✓ No Menu Superior' : '✕ Apenas em Categorias'}</span>
+                      </button>
                     </div>
                   </div>
 
@@ -317,7 +435,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => handleOpenEdit(cat)}
-                      className="p-2 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                      className="p-2 text-neutral-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
                       title="Editar Categoria"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -430,32 +548,39 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
                   />
                 </div>
 
-                <div className="flex items-center pt-6">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      checked={formActive}
+                      checked={Boolean(formActive)}
                       onChange={(e) => setFormActive(e.target.checked)}
-                      className="w-4 h-4 rounded text-emerald-600"
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                     />
-                    <span className="text-xs font-bold text-neutral-700">Categoria Ativa</span>
+                    <div>
+                      <span className="text-xs font-bold text-neutral-800">Categoria Ativa</span>
+                      <p className="text-[10px] text-neutral-400">Visível no site</p>
+                    </div>
                   </label>
                 </div>
               </div>
 
-              <div className="pt-2">
-                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={formMostrarNoMenu}
+                    checked={Boolean(formMostrarNoMenu)}
                     onChange={(e) => setFormMostrarNoMenu(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 rounded border-neutral-300 focus:ring-emerald-500"
+                    className="w-4 h-4 mt-0.5 text-emerald-600 rounded border-neutral-300 focus:ring-emerald-500 cursor-pointer"
                   />
-                  <span className="text-xs font-bold text-neutral-800">Exibir no menu superior do Blog</span>
+                  <div>
+                    <span className="text-xs font-bold text-neutral-800">Exibir no menu superior do Blog</span>
+                    <p className="text-[11px] text-neutral-500 mt-0.5 leading-tight">
+                      {formMostrarNoMenu
+                        ? '✓ Marcado: Aparece diretamente como botão de atalho na barra superior do Blog.'
+                        : '○ Desmarcado: Oculto da barra superior. Permanece visível no botão suspenso "Categorias".'}
+                    </p>
+                  </div>
                 </label>
-                <p className="text-[11px] text-neutral-400 mt-0.5 ml-6">
-                  Se marcado, esta categoria aparecerá diretamente na barra superior. Caso contrário, ficará visível apenas no botão "Categorias".
-                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-neutral-100">
