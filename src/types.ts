@@ -298,6 +298,7 @@ export interface BlogCategory {
   description?: string;
   order?: number;
   active?: boolean;
+  mostrarNoMenu?: boolean;
   createdAt?: string;
   updatedAt?: string;
   [key: string]: any;

@@ -13,6 +13,8 @@ import {
   Tag,
   Store,
   ChevronRight,
+  ChevronDown,
+  Menu,
   TrendingUp,
   Share2,
   CheckCircle2,
@@ -49,6 +51,18 @@ export default function BlogHome({
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
+  const [categoriasOpen, setCategoriasOpen] = useState(false);
+  const categoriasRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (categoriasRef.current && !categoriasRef.current.contains(e.target as Node)) {
+        setCategoriasOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const social = getSocialLinks(config);
   const primaryColor = blogSettings?.blogPrimaryColor || config?.corPrimaria || '#2A5C3F';
@@ -235,29 +249,112 @@ export default function BlogHome({
 
       {/* Main Content Area */}
       <main id="articles-section" className="max-w-[1300px] mx-auto px-4 md:px-6 py-10 md:py-14 scroll-mt-6">
-        {/* Category Pills Bar */}
+        {/* Category Navigation Bar with Categorias Dropdown */}
         {blogSettings?.showCategoriesBar !== false && (
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-4 mb-8">
-            <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider shrink-0 mr-2 flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5" />
-              Categorias:
-            </span>
-            {categories.map((cat) => (
+            {/* Categorias Dropdown Button */}
+            <div className="relative shrink-0" ref={categoriasRef}>
               <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-                  activeCategory === cat
-                    ? 'text-white shadow-xs'
-                    : 'bg-white text-neutral-600 hover:text-neutral-900 border border-neutral-200/80 hover:bg-neutral-50'
+                type="button"
+                onClick={() => setCategoriasOpen(!categoriasOpen)}
+                className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-bold uppercase whitespace-nowrap rounded-xl transition cursor-pointer shadow-xs ${
+                  categoriasOpen || activeCategory !== 'Todos'
+                    ? 'text-white'
+                    : 'bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200/80'
                 }`}
-                style={{
-                  backgroundColor: activeCategory === cat ? primaryColor : undefined
-                }}
+                style={
+                  categoriasOpen || activeCategory !== 'Todos'
+                    ? { backgroundColor: primaryColor, color: '#ffffff' }
+                    : {}
+                }
               >
-                {cat}
+                <Menu className="w-4 h-4 stroke-[2.5]" />
+                <span>Categorias</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${categoriasOpen ? 'rotate-180' : ''}`} />
               </button>
-            ))}
+
+              {/* Dropdown Menu */}
+              {categoriasOpen && (
+                <div className="absolute left-0 top-full mt-2 w-[calc(100vw-32px)] sm:w-80 max-w-[340px] bg-white rounded-2xl shadow-2xl border border-neutral-200/90 py-1.5 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-neutral-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveCategory('Todos');
+                        setCategoriasOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 text-xs sm:text-sm font-bold uppercase transition text-left cursor-pointer ${
+                        activeCategory === 'Todos' ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-neutral-50 text-neutral-800'
+                      }`}
+                    >
+                      <span>Todas as Categorias</span>
+                      <span className="text-[10px] font-normal text-neutral-400">({posts.length})</span>
+                    </button>
+                    {blogCategories.filter(c => c.active !== false).map((cat) => {
+                      const isCatActive = activeCategory === cat.name;
+                      return (
+                        <button
+                          key={cat.id || cat.name}
+                          type="button"
+                          onClick={() => {
+                            setActiveCategory(cat.name);
+                            setCategoriasOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-4 py-3 text-xs sm:text-sm font-bold uppercase transition text-left cursor-pointer ${
+                            isCatActive ? 'bg-emerald-50 text-emerald-800' : 'hover:bg-neutral-50 text-neutral-800'
+                          }`}
+                          style={isCatActive ? { color: primaryColor } : {}}
+                        >
+                          <div className="flex items-center gap-2.5 truncate">
+                            <span className="text-base">{cat.icon || '📑'}</span>
+                            <span className="truncate">{cat.name}</span>
+                          </div>
+                          {cat.mostrarNoMenu === false && (
+                            <span className="text-[9px] font-medium bg-neutral-100 text-neutral-500 px-1.5 py-0.5 rounded">Apenas no Menu</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 'Todos' Button */}
+            <button
+              onClick={() => setActiveCategory('Todos')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                activeCategory === 'Todos'
+                  ? 'text-white shadow-xs'
+                  : 'bg-white text-neutral-600 hover:text-neutral-900 border border-neutral-200/80 hover:bg-neutral-50'
+              }`}
+              style={{
+                backgroundColor: activeCategory === 'Todos' ? primaryColor : undefined
+              }}
+            >
+              Todos
+            </button>
+
+            {/* Top Bar Categories (mostrarNoMenu !== false) */}
+            {blogCategories
+              .filter(c => c.active !== false && c.mostrarNoMenu !== false)
+              .map((cat) => (
+                <button
+                  key={cat.id || cat.name}
+                  onClick={() => setActiveCategory(cat.name)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+                    activeCategory === cat.name
+                      ? 'text-white shadow-xs'
+                      : 'bg-white text-neutral-600 hover:text-neutral-900 border border-neutral-200/80 hover:bg-neutral-50'
+                  }`}
+                  style={{
+                    backgroundColor: activeCategory === cat.name ? primaryColor : undefined
+                  }}
+                >
+                  <span>{cat.icon || '📑'}</span>
+                  <span>{cat.name}</span>
+                </button>
+              ))}
           </div>
         )}
 

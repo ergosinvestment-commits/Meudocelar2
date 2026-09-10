@@ -44,6 +44,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
   const [formDescription, setFormDescription] = useState('');
   const [formOrder, setFormOrder] = useState(1);
   const [formActive, setFormActive] = useState(true);
+  const [formMostrarNoMenu, setFormMostrarNoMenu] = useState(true);
 
   useEffect(() => {
     loadData();
@@ -73,6 +74,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
     setFormDescription('');
     setFormOrder(categories.length + 1);
     setFormActive(true);
+    setFormMostrarNoMenu(true);
     setIsModalOpen(true);
   }
 
@@ -84,6 +86,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
     setFormDescription(cat.description || '');
     setFormOrder(cat.order || 1);
     setFormActive(cat.active !== false);
+    setFormMostrarNoMenu(cat.mostrarNoMenu !== false);
     setIsModalOpen(true);
   }
 
@@ -124,7 +127,8 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
         icon: formIcon.trim() || '📑',
         description: formDescription.trim(),
         order: Number(formOrder) || 1,
-        active: formActive
+        active: formActive,
+        mostrarNoMenu: formMostrarNoMenu
       };
 
       const saved = await saveAdminBlogCategory(storeSlug, payload);
@@ -275,15 +279,26 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
                       </div>
                     </div>
 
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        cat.active !== false
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-neutral-100 text-neutral-500'
-                      }`}
-                    >
-                      {cat.active !== false ? 'Ativa' : 'Inativa'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          cat.active !== false
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-neutral-100 text-neutral-500'
+                        }`}
+                      >
+                        {cat.active !== false ? 'Ativa' : 'Inativa'}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[9px] font-semibold ${
+                          cat.mostrarNoMenu !== false
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-amber-50 text-amber-800'
+                        }`}
+                      >
+                        {cat.mostrarNoMenu !== false ? 'No Menu Superior' : 'Apenas em Categorias'}
+                      </span>
+                    </div>
                   </div>
 
                   {cat.description && (
@@ -426,6 +441,21 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
                     <span className="text-xs font-bold text-neutral-700">Categoria Ativa</span>
                   </label>
                 </div>
+              </div>
+
+              <div className="pt-2">
+                <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formMostrarNoMenu}
+                    onChange={(e) => setFormMostrarNoMenu(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded border-neutral-300 focus:ring-emerald-500"
+                  />
+                  <span className="text-xs font-bold text-neutral-800">Exibir no menu superior do Blog</span>
+                </label>
+                <p className="text-[11px] text-neutral-400 mt-0.5 ml-6">
+                  Se marcado, esta categoria aparecerá diretamente na barra superior. Caso contrário, ficará visível apenas no botão "Categorias".
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-neutral-100">

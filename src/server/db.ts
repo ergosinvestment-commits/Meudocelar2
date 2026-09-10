@@ -286,6 +286,19 @@ class DatabaseManager {
           changed = true;
         }
 
+        if (!parsed.blogCategories || !Array.isArray(parsed.blogCategories) || parsed.blogCategories.length === 0) {
+          parsed.blogCategories = [...FALLBACK_BLOG_CATEGORIES];
+          changed = true;
+        } else {
+          parsed.blogCategories = parsed.blogCategories.map((bc: BlogCategory) => {
+            if (bc.mostrarNoMenu === undefined) {
+              bc.mostrarNoMenu = true;
+              changed = true;
+            }
+            return bc;
+          });
+        }
+
         if (!parsed.messages || !Array.isArray(parsed.messages)) {
           parsed.messages = [];
           changed = true;
@@ -2544,6 +2557,7 @@ class DatabaseManager {
       description: data.description?.trim() || '',
       order: typeof data.order === 'number' ? data.order : this.data.blogCategories.length + 1,
       active: data.active !== false,
+      mostrarNoMenu: data.mostrarNoMenu !== undefined ? Boolean(data.mostrarNoMenu) : true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -2569,6 +2583,7 @@ class DatabaseManager {
       ...current,
       ...data,
       name: newName || current.name,
+      mostrarNoMenu: data.mostrarNoMenu !== undefined ? Boolean(data.mostrarNoMenu) : (current.mostrarNoMenu !== false),
       updatedAt: new Date().toISOString()
     };
 

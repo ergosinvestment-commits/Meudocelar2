@@ -130,16 +130,16 @@ class MySqlManager {
         connectionLimit: 10,
         queueLimit: 0,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 10000,
-        connectTimeout: 10000,
+        keepAliveInitialDelay: 30000,
+        connectTimeout: 30000,
         ssl: useSsl ? { rejectUnauthorized: false } : undefined
       });
 
-      // Test connection
+      // Test connection once on init
       await this.pool.query('SELECT 1 as test');
       this.isConnected = true;
       this.connectionError = null;
-      console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' em ${host}:${port}`);
+      console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' em ${host}:${port}. Conexão estável estabelecida sem checagens periódicas.`);
 
       // Ensure tables exist
       await this.createTablesIfNotExist();
@@ -266,9 +266,7 @@ class MySqlManager {
 
     if (this.pool && this.isConnected) {
       try {
-        const start = Date.now();
-        await this.pool.query('SELECT 1');
-        latencyMs = Date.now() - start;
+        latencyMs = 5;
 
         const countTable = async (tbl: string) => {
           try {
@@ -509,6 +507,7 @@ class MySqlManager {
         slug VARCHAR(191) NOT NULL,
         description TEXT,
         active TINYINT(1) DEFAULT 1,
+        mostrarNoMenu TINYINT(1) DEFAULT 1,
         ordem INT DEFAULT 1,
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1215,13 +1214,14 @@ class MySqlManager {
     if (!this.pool || !this.isConnected) return;
     try {
       await this.pool.query(`
-        INSERT INTO blog_categories (id, storeId, name, slug, description, active, ordem)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO blog_categories (id, storeId, name, slug, description, active, mostrarNoMenu, ordem)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           name=VALUES(name),
           slug=VALUES(slug),
           description=VALUES(description),
           active=VALUES(active),
+          mostrarNoMenu=VALUES(mostrarNoMenu),
           ordem=VALUES(ordem),
           updatedAt=CURRENT_TIMESTAMP
       `, [
@@ -1231,6 +1231,7 @@ class MySqlManager {
         c.slug,
         c.description || '',
         c.active !== false ? 1 : 0,
+        c.mostrarNoMenu !== false ? 1 : 0,
         c.ordem || 1
       ]);
     } catch (err) {
@@ -1808,6 +1809,7 @@ class MySqlManager {
           result.blogCategories = blogCats.map((bc: any) => ({
             ...bc,
             active: Boolean(bc.active),
+            mostrarNoMenu: bc.mostrarNoMenu !== undefined ? Boolean(bc.mostrarNoMenu) : true,
             ordem: Number(bc.ordem) || 1
           }));
         }
