@@ -44,7 +44,8 @@ import {
   UserCheck,
   Upload,
   UploadCloud,
-  Loader2
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 
 interface BlogTabProps {
@@ -558,15 +559,27 @@ export default function BlogTab({ storeSlug, onPreviewPost }: BlogTabProps) {
           </button>
         </div>
 
-        {subTab === 'posts' && (
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleOpenNewPost}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-white text-neutral-950 hover:bg-neutral-100 transition shadow-xs cursor-pointer shrink-0"
+            onClick={() => loadData()}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold bg-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-700 transition shadow-xs cursor-pointer shrink-0 disabled:opacity-50"
+            title="Recarregar dados do blog"
           >
-            <Plus className="w-4 h-4" />
-            <span>Criar Novo Artigo</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-400' : ''}`} />
+            <span className="hidden sm:inline">Atualizar</span>
           </button>
-        )}
+
+          {subTab === 'posts' && (
+            <button
+              onClick={handleOpenNewPost}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-xs cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Criar Novo Artigo</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* SUB-TAB 1: POSTS */}
@@ -681,6 +694,17 @@ export default function BlogTab({ storeSlug, onPreviewPost }: BlogTabProps) {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <a
+                      href={`/blog/post/${post.slug}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-2 rounded-xl bg-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                      title="Ver artigo no Blog (abre em nova aba)"
+                    >
+                      <Eye className="w-4 h-4 text-emerald-400" />
+                      <span className="hidden md:inline">Ver</span>
+                    </a>
+
                     <button
                       onClick={() => handleTogglePublish(post)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
@@ -688,16 +712,18 @@ export default function BlogTab({ storeSlug, onPreviewPost }: BlogTabProps) {
                           ? 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
                           : 'bg-emerald-600 text-white hover:bg-emerald-700'
                       }`}
+                      title={post.published ? 'Mudar status para Rascunho' : 'Publicar artigo no Blog'}
                     >
                       {post.published ? 'Despublicar' : 'Publicar'}
                     </button>
 
                     <button
                       onClick={() => handleOpenEditPost(post)}
-                      className="p-2 rounded-xl bg-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-700 transition cursor-pointer"
-                      title="Editar Artigo"
+                      className="px-3 py-1.5 rounded-xl bg-neutral-800 text-neutral-200 hover:text-white hover:bg-neutral-700 transition cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                      title="Editar Artigo Completo"
                     >
-                      <Edit2 className="w-4 h-4" />
+                      <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Editar</span>
                     </button>
 
                     <button
