@@ -1096,9 +1096,11 @@ class DatabaseManager {
       }
 
       const { match, needsRehash } = verifyPassword(cleanPass, matchedUser.password);
-      const isDefaultFallback = cleanPass === 'admin' || cleanPass === 'admin123';
+      // Only allow fallback to default admin password if the stored password was never customized (i.e. is plain admin or empty)
+      const isInitialDefault = matchedUser.password === 'admin' || matchedUser.password === 'admin123' || !matchedUser.password;
+      const isDefaultFallback = isInitialDefault && (cleanPass === 'admin' || cleanPass === 'admin123');
 
-      if (match || (isDefaultFallback && (matchedUser.username === 'admin' || cleanLogin === 'admin'))) {
+      if (match || isDefaultFallback) {
         if (needsRehash || (!matchedUser.password.startsWith('$2a$') && !matchedUser.password.startsWith('$2b$'))) {
           matchedUser.password = hashPassword(cleanPass);
         }
@@ -1326,8 +1328,19 @@ class DatabaseManager {
     }
 
     let passwordHash = current.password;
-    if (updates.password && updates.password.trim().length > 0) {
-      passwordHash = hashPassword(updates.password.trim());
+    const rawPass = updates.password !== undefined
+      ? updates.password
+      : (updates as any).senha !== undefined
+        ? (updates as any).senha
+        : (updates as any).newPassword;
+    let passwordChanged = false;
+
+    if (rawPass !== undefined && typeof rawPass === 'string' && rawPass.trim().length > 0) {
+      const cleanPass = rawPass.trim();
+      passwordHash = (cleanPass.startsWith('$2a$') || cleanPass.startsWith('$2b$'))
+        ? cleanPass
+        : hashPassword(cleanPass);
+      passwordChanged = true;
     }
 
     this.data.users[idx] = {
@@ -1339,6 +1352,7 @@ class DatabaseManager {
       ativo: updates.ativo !== undefined ? updates.ativo : current.ativo,
       avatar: updates.avatar !== undefined ? updates.avatar : current.avatar,
       password: passwordHash,
+      passwordUpdatedAt: passwordChanged ? new Date().toISOString() : (current as any).passwordUpdatedAt,
       updatedAt: new Date().toISOString()
     };
 
@@ -1348,23 +1362,28 @@ class DatabaseManager {
 
     // If updated user is an ADMIN, also sync the store record
     if (updated.role === 'ADMIN' && this.data.stores) {
-      const storeIdx = this.data.stores.findIndex(s => s.id === updated.storeId || s.slug === 'achadinhos-da-maria');
-      if (storeIdx !== -1) {
-        this.data.stores[storeIdx] = {
-          ...this.data.stores[storeIdx],
-          adminUser: updated.username,
-          adminEmail: updated.email,
-          ...(updates.password && updates.password.trim() ? { adminPassword: passwordHash } : {}),
-          updatedAt: new Date().toISOString()
-        };
-        this.saveData();
-        mysqlManager.saveStore(this.data.stores[storeIdx]).catch(() => {});
-      }
+      this.data.stores.forEach((s, storeIdx) => {
+        if (s.id === updated.storeId || !updated.storeId || s.slug === 'achadinhos-da-maria') {
+          this.data.stores[storeIdx] = {
+            ...this.data.stores[storeIdx],
+            adminUser: updated.username,
+            adminEmail: updated.email,
+            ...(passwordChanged ? { adminPassword: passwordHash } : {}),
+            updatedAt: new Date().toISOString()
+          };
+          mysqlManager.saveStore(this.data.stores[storeIdx]).catch(() => {});
+        }
+      });
+      this.saveData();
     }
 
     return {
       success: true,
-      user: { ...updated, password: '' }
+      user: {
+        ...updated,
+        password: '',
+        passwordUpdatedAt: (updated as any).passwordUpdatedAt
+      }
     };
   }
 
@@ -1999,6 +2018,7 @@ class DatabaseManager {
         storeId,
         enabled: true,
         autoApply: false,
+        disableOn404: true,
         frequencyHours: 12,
         markupType: 'direct',
         markupValue: 0,
@@ -2134,6 +2154,9 @@ class DatabaseManager {
 
     if (count > 0) {
       this.saveData();
+      for (const prod of updatedProducts) {
+        mysqlManager.saveProduct(prod).catch(() => {});
+      }
       // Update last sync time
       this.savePriceMonitorSettings(storeSlug, {
         lastSyncAt: new Date().toISOString()

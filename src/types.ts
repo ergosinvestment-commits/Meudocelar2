@@ -189,6 +189,7 @@ export interface PriceMonitorSettings {
   enabled?: boolean;
   frequencyHours?: number;
   autoApply?: boolean;
+  disableOn404?: boolean;
   checkIntervalHours?: number;
   outOfStockAction?: OutOfStockAction;
   markupType?: PriceMarkupType;
@@ -220,6 +221,8 @@ export interface PriceCheckResult {
   rawText?: string;
   error?: string;
   message?: string;
+  httpStatus?: number;
+  is404?: boolean;
   [key: string]: any;
 }
 

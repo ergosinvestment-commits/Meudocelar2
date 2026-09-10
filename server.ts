@@ -547,6 +547,21 @@ async function startServer() {
     res.json(result.user);
   });
 
+  // Dedicated user password change
+  app.post('/api/admin/store/:slug/users/:id/password', async (req, res) => {
+    const id = req.params.id;
+    const { password, newPassword, senha } = req.body || {};
+    const passToSet = password || newPassword || senha;
+    if (!passToSet || typeof passToSet !== 'string' || !passToSet.trim()) {
+      return res.status(400).json({ error: 'A nova senha deve ser informada.' });
+    }
+    const result = db.updateUser(id, { password: passToSet.trim() });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error || 'Erro ao alterar senha do usuário' });
+    }
+    res.json({ success: true, message: 'Senha atualizada com sucesso!', user: result.user });
+  });
+
   // Delete user
   app.delete('/api/admin/store/:slug/users/:id', async (req, res) => {
     const id = req.params.id;
@@ -1256,7 +1271,13 @@ async function startServer() {
           }
 
           // Compute difference and status
-          if (!check.inStock) {
+          const is404 = check.status === 'not_found' || check.httpStatus === 404 || check.is404 || (check.error && check.error.toLowerCase().includes('404'));
+
+          if (is404) {
+            check.status = 'not_found';
+            check.inStock = false;
+            check.is404 = true;
+          } else if (!check.inStock) {
             check.status = 'out_of_stock';
           } else if (check.calculatedPrice && check.calculatedPrice > prod.preco) {
             check.status = 'up';
@@ -1264,12 +1285,22 @@ async function startServer() {
           } else if (check.calculatedPrice && check.calculatedPrice < prod.preco) {
             check.status = 'down';
             check.diffPercent = Math.round(((prod.preco - check.calculatedPrice) / prod.preco) * 100);
-          } else if (check.status !== 'error' && check.status !== 'not_found') {
+          } else if (check.status !== 'error') {
             check.status = 'unchanged';
             check.diffPercent = 0;
           }
 
-          if (autoApply || settings.autoApply) {
+          // If product returned 404 error, disable it from the store
+          const shouldDisableOn404 = settings.disableOn404 !== false;
+
+          if (is404 && shouldDisableOn404) {
+            const updateItem: typeof updatesToApply[0] = {
+              productId: prod.id,
+              ativo: false,
+              stockStatus: 'out_of_stock'
+            };
+            updatesToApply.push(updateItem);
+          } else if (autoApply || settings.autoApply) {
             const updateItem: typeof updatesToApply[0] = {
               productId: prod.id,
               newSupplierPrice: check.supplierPrice || prod.preco,
@@ -1311,12 +1342,17 @@ async function startServer() {
         lastSyncAt: new Date().toISOString()
       });
 
+      const disabled404Count = updatesToApply.filter(u => u.ativo === false).length;
+
       res.json({
         success: true,
         scannedCount: results.length,
         results,
         appliedCount,
-        message: `Varredura concluída em ${results.length} produto(s). ${appliedCount > 0 ? `${appliedCount} produtos atualizados automaticamente.` : ''}`
+        disabled404Count,
+        message: `Varredura concluída em ${results.length} produto(s). ${
+          disabled404Count > 0 ? `${disabled404Count} produto(s) com erro 404/esgotados foram desabilitados da loja. ` : ''
+        }${appliedCount > 0 ? `${appliedCount} produtos atualizados.` : ''}`
       });
     } catch (err: any) {
       res.status(500).json({ error: 'Erro durante a varredura do catálogo: ' + (err?.message || 'Falha') });
@@ -1373,7 +1409,16 @@ async function startServer() {
         for (const prod of products.slice(0, 30)) { // limit to 30 per run to avoid spam
           try {
             const check = await fetchSupplierData(prod.linkAfiliado, { timeoutMs: 10000 });
-            if (check.supplierPrice && check.supplierPrice > 0) {
+            const is404 = check.status === 'not_found' || check.httpStatus === 404 || check.is404 || (check.error && check.error.toLowerCase().includes('404'));
+            const shouldDisableOn404 = settings.disableOn404 !== false;
+
+            if (is404 && shouldDisableOn404) {
+              updatesToApply.push({
+                productId: prod.id,
+                ativo: false,
+                stockStatus: 'out_of_stock'
+              });
+            } else if (check.supplierPrice && check.supplierPrice > 0) {
               const calcPrice = calculateMarkupPrice(check.supplierPrice, settings.markupType, settings.markupValue);
               const calcPromo = check.supplierPromo ? calculateMarkupPrice(check.supplierPromo, settings.markupType, settings.markupValue) : null;
               

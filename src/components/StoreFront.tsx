@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StoreConfig, Product, Category, Platform } from '../types';
 import { fetchStoreConfig, fetchStoreProducts, fetchStoreCategories, fetchStorePlatforms, recordProductClick, recordStoreView } from '../api/client';
-import { Search, X, MessageCircle, Send, ExternalLink, Share2, ArrowUp, Check, Copy, ChevronDown, ChevronRight, Menu, Plus, Minus, LayoutGrid, Layers, Tag, Home, Globe, Lock, Image as ImageIcon, BookOpen } from 'lucide-react';
+import { Search, X, MessageCircle, Send, ExternalLink, Share2, ArrowUp, Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ChevronsLeft, ChevronsRight, Menu, Plus, Minus, LayoutGrid, Layers, Tag, Home, Globe, Lock, Image as ImageIcon, BookOpen } from 'lucide-react';
 import DynamicIcon from './DynamicIcon';
 import { normalizeImageUrl, getProxiedImageUrl } from '../utils';
 import { getSocialLinks } from '../utils/social';
+
+const PRODUCTS_PER_PAGE = 32;
 
 interface StoreFrontProps {
   storeSlug: string;
@@ -28,9 +30,9 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
   const [departamentosOpen, setDepartamentosOpen] = useState(false);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [expandedMobileCats, setExpandedMobileCats] = useState<Record<string, boolean>>({});
-  const [visibleCount, setVisibleCount] = useState<number>(24);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const departamentosRef = useRef<HTMLDivElement>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const productsSectionRef = useRef<HTMLDivElement>(null);
 
   // Modal State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -101,6 +103,11 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
           setActiveSubcategory(subParam);
         }
 
+        const pageParam = urlParams.get('pagina') || urlParams.get('page');
+        if (pageParam && !isNaN(parseInt(pageParam, 10)) && parseInt(pageParam, 10) > 0) {
+          setCurrentPage(parseInt(pageParam, 10));
+        }
+
         if (prodParam) {
           const found = storeProds.find(p => toSlug(p.nome) === prodParam);
           if (found) {
@@ -142,7 +149,7 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
 
   // Reset pagination when category, subcategory or search query changes
   useEffect(() => {
-    setVisibleCount(24);
+    setCurrentPage(1);
   }, [activeCategory, activeSubcategory, searchQuery]);
 
   function toSlug(text: string) {
@@ -211,10 +218,13 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
     setDepartamentosOpen(false);
     setHoveredCategory(null);
     setSearchQuery('');
+    setCurrentPage(1);
 
     // Update URL query parameters cleanly
     try {
       const url = new URL(window.location.href);
+      url.searchParams.delete('pagina');
+      url.searchParams.delete('page');
       if (cat === 'Todos') {
         url.searchParams.delete('categoria');
         url.searchParams.delete('departamento');
@@ -333,25 +343,56 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
     return true;
   }).sort((a, b) => (a.ordem || 999) - (b.ordem || 999));
 
-  // Chunked visible products for 60fps mobile scrolling and instant FCP
-  const visibleProducts = filteredProducts.slice(0, visibleCount);
-
-  // Progressive infinite scroll loading via IntersectionObserver for smooth 60fps mobile scrolling
-  useEffect(() => {
-    if (!loadMoreRef.current) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setVisibleCount((prev) => prev + 24);
-      }
-    }, { rootMargin: '350px' });
-
-    observer.observe(loadMoreRef.current);
-    return () => observer.disconnect();
-  }, [filteredProducts.length]);
-
-  // Featured products
+  // Featured products (Destaques da Semana)
   const featuredProducts = products.filter(p => p.ativo && p.destaque)
     .sort((a, b) => (a.ordem || 999) - (b.ordem || 999));
+
+  // Pagination logic (32 products per page)
+  const totalItems = filteredProducts.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PRODUCTS_PER_PAGE));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * PRODUCTS_PER_PAGE;
+  const endIndex = Math.min(startIndex + PRODUCTS_PER_PAGE, totalItems);
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
+  function handlePageChange(newPage: number) {
+    const targetPage = Math.min(Math.max(1, newPage), totalPages);
+    if (targetPage === safeCurrentPage) return;
+    setCurrentPage(targetPage);
+    try {
+      const url = new URL(window.location.href);
+      if (targetPage === 1) {
+        url.searchParams.delete('pagina');
+        url.searchParams.delete('page');
+      } else {
+        url.searchParams.set('pagina', String(targetPage));
+      }
+      window.history.replaceState({}, '', url.toString());
+    } catch (e) {
+      // ignore
+    }
+
+    if (productsSectionRef.current) {
+      const yOffset = -24;
+      const y = productsSectionRef.current.getBoundingClientRect().top + window.pageYOffset + yOffset;
+      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: 120, behavior: 'smooth' });
+    }
+  }
+
+  function getPaginationItems(current: number, total: number): (number | string)[] {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 4) {
+      return [1, 2, 3, 4, 5, '...', total];
+    }
+    if (current >= total - 3) {
+      return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  }
 
   // Fast Instant Skeleton Loading (Zero Layout Shift)
   if (loading) {
@@ -1043,7 +1084,7 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
         )}
 
         {/* Section Header */}
-        <div className="flex items-baseline justify-between mb-5">
+        <div ref={productsSectionRef} className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-5 scroll-mt-20">
           <div>
             <h2 className="text-lg md:text-xl font-bold text-[#1B1B1B] tracking-tight">
               {searchQuery
@@ -1053,12 +1094,25 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
                 : `Ofertas em ${activeCategory}`}
             </h2>
             {activeSubcategory && (
-              <p className="text-xs text-[#6B6760] mt-0.5">Subcategoria selecionada: <span className="font-semibold text-neutral-900">{activeSubcategory}</span></p>
+              <p className="text-xs text-[#6B6760] mt-0.5">
+                Subcategoria selecionada: <span className="font-semibold text-neutral-900">{activeSubcategory}</span>
+              </p>
             )}
           </div>
-          <span className="text-xs md:text-sm text-[#87837A] font-medium">
-            {filteredProducts.length} oferta{filteredProducts.length !== 1 ? 's' : ''}
-          </span>
+          <div className="text-xs md:text-sm text-[#87837A] font-medium">
+            {totalItems > 0 ? (
+              <span>
+                Mostrando <strong className="text-neutral-900">{startIndex + 1}–{endIndex}</strong> de <strong className="text-neutral-900">{totalItems}</strong> {totalItems !== 1 ? 'produtos' : 'produto'}
+                {totalPages > 1 && (
+                  <span className="ml-1.5 text-neutral-500 font-normal">
+                    (Página {safeCurrentPage} de {totalPages})
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span>0 ofertas</span>
+            )}
+          </div>
         </div>
 
         {/* Products Grid */}
@@ -1082,23 +1136,93 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
         ) : (
           <div>
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-              {visibleProducts.map((p) => renderProductCard(p))}
+              {paginatedProducts.map((p) => renderProductCard(p))}
             </div>
 
-            {/* Progressive Loading Controls */}
-            {visibleCount < filteredProducts.length && (
-              <div className="mt-8 text-center flex flex-col items-center justify-center gap-2">
-                <button
-                  onClick={() => setVisibleCount(prev => prev + 24)}
-                  className="px-6 py-2.5 bg-white hover:bg-neutral-50 active:scale-98 text-neutral-800 font-bold text-xs md:text-sm rounded-xl border border-neutral-200 shadow-xs hover:shadow-sm transition flex items-center gap-2 cursor-pointer"
-                >
-                  <span>Carregar mais ofertas</span>
-                  <span className="px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 text-xs font-mono">
-                    +{Math.min(24, filteredProducts.length - visibleCount)} de {filteredProducts.length - visibleCount}
-                  </span>
-                </button>
-                <div ref={loadMoreRef} className="h-4 w-full pointer-events-none" />
-              </div>
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <nav
+                aria-label="Navegação de páginas da loja"
+                className="mt-10 pt-6 border-t border-neutral-200/80 flex flex-col sm:flex-row items-center justify-between gap-4"
+              >
+                {/* Pagination Info */}
+                <p className="text-xs sm:text-sm text-neutral-600 font-medium order-2 sm:order-1 text-center sm:text-left">
+                  Página <span className="font-bold text-neutral-900">{safeCurrentPage}</span> de{' '}
+                  <span className="font-bold text-neutral-900">{totalPages}</span>
+                  <span className="text-neutral-400 mx-1.5">•</span>
+                  <span>{totalItems} produtos cadastrados</span>
+                </p>
+
+                {/* Navigation Buttons */}
+                <div className="flex items-center gap-1.5 order-1 sm:order-2 flex-wrap justify-center">
+                  {/* Previous button */}
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(safeCurrentPage - 1)}
+                    disabled={safeCurrentPage <= 1}
+                    aria-label="Página anterior"
+                    className={`inline-flex items-center gap-1 px-3 py-2 text-xs md:text-sm font-semibold rounded-xl border transition cursor-pointer ${
+                      safeCurrentPage <= 1
+                        ? 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed opacity-60'
+                        : 'bg-white text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 border-neutral-300 shadow-2xs active:scale-97'
+                    }`}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span className="hidden xs:inline">Anterior</span>
+                  </button>
+
+                  {/* Numbered Page Buttons */}
+                  {getPaginationItems(safeCurrentPage, totalPages).map((item, idx) => {
+                    if (item === '...') {
+                      return (
+                        <span
+                          key={`ellipsis-${idx}`}
+                          className="w-8 h-9 flex items-center justify-center text-xs text-neutral-400 font-bold select-none"
+                        >
+                          …
+                        </span>
+                      );
+                    }
+
+                    const pageNum = Number(item);
+                    const isCurrent = pageNum === safeCurrentPage;
+
+                    return (
+                      <button
+                        key={`page-${pageNum}`}
+                        type="button"
+                        onClick={() => handlePageChange(pageNum)}
+                        aria-label={`Ir para a página ${pageNum}`}
+                        aria-current={isCurrent ? 'page' : undefined}
+                        className={`min-w-9 h-9 px-2 text-xs md:text-sm font-bold rounded-xl transition flex items-center justify-center cursor-pointer ${
+                          isCurrent
+                            ? 'text-white shadow-xs font-black'
+                            : 'bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 shadow-2xs hover:border-neutral-300'
+                        }`}
+                        style={isCurrent ? { backgroundColor: primaryColor, borderColor: primaryColor } : {}}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  {/* Next button */}
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(safeCurrentPage + 1)}
+                    disabled={safeCurrentPage >= totalPages}
+                    aria-label="Próxima página"
+                    className={`inline-flex items-center gap-1 px-3 py-2 text-xs md:text-sm font-semibold rounded-xl border transition cursor-pointer ${
+                      safeCurrentPage >= totalPages
+                        ? 'bg-neutral-100 text-neutral-400 border-neutral-200 cursor-not-allowed opacity-60'
+                        : 'bg-white text-neutral-700 hover:bg-neutral-50 hover:text-neutral-900 border-neutral-300 shadow-2xs active:scale-97'
+                    }`}
+                  >
+                    <span className="hidden xs:inline">Próxima</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </nav>
             )}
           </div>
         )}

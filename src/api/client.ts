@@ -475,6 +475,7 @@ export async function scanCatalogPrices(slug: string = 'achadinhos-da-maria', pr
   scannedCount: number;
   results: PriceCheckResult[];
   appliedCount: number;
+  disabled404Count?: number;
   message: string;
 }> {
   // 1. Try server endpoint first

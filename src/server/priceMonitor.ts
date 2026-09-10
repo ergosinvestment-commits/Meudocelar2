@@ -86,14 +86,60 @@ export async function fetchSupplierData(url: string, options?: { timeoutMs?: num
 
     clearTimeout(timeoutId);
 
+    result.httpStatus = response.status;
+
     if (!response.ok) {
-      result.error = `HTTP ${response.status}: ${response.statusText}`;
-      result.status = 'error';
+      if (response.status === 404 || response.status === 410) {
+        result.status = 'not_found';
+        result.is404 = true;
+        result.inStock = false;
+        result.error = `Erro ${response.status}: Produto não encontrado (Link 404)`;
+        result.message = 'O link do produto retornou erro 404 (página inexistente ou removida do fornecedor).';
+      } else {
+        result.error = `HTTP ${response.status}: ${response.statusText}`;
+        result.status = 'error';
+      }
       return result;
     }
 
     const html = await response.text();
     const $ = cheerio.load(html);
+
+    // Extract OpenGraph or Page Metadata
+    const ogTitle = $('meta[property="og:title"]').attr('content') || $('meta[name="twitter:title"]').attr('content');
+    const ogImage = $('meta[property="og:image"]').attr('content') || $('meta[name="twitter:image"]').attr('content');
+    const pageTitle = $('title').first().text().trim();
+    if (ogTitle || pageTitle) {
+      result.detectedName = (ogTitle || pageTitle).replace(/\s+/g, ' ').trim();
+    }
+    if (ogImage) {
+      result.detectedImage = ogImage.trim();
+    }
+
+    // Check for 404 / Page Not Found / Product Removed within HTML content
+    const lowerTitle = (pageTitle || '').toLowerCase();
+    const lowerBody = $('body').text().toLowerCase();
+
+    const is404Content =
+      lowerTitle.includes('404') ||
+      lowerTitle.includes('página não encontrada') ||
+      lowerTitle.includes('pagina nao encontrada') ||
+      lowerTitle.includes('page not found') ||
+      lowerTitle.includes('produto não encontrado') ||
+      lowerTitle.includes('não encontramos') ||
+      lowerBody.includes('404 - página não encontrada') ||
+      lowerBody.includes('404 página não encontrada') ||
+      lowerBody.includes('página não encontrada') ||
+      lowerBody.includes('pagina nao encontrada') ||
+      lowerBody.includes('este anúncio foi finalizado') ||
+      lowerBody.includes('o anúncio foi pausado') ||
+      lowerBody.includes('anúncio pausado') ||
+      lowerBody.includes('produto não encontrado') ||
+      lowerBody.includes('ops! não encontramos esta página') ||
+      lowerBody.includes('o produto que você procura não está mais disponível') ||
+      lowerBody.includes('produto indisponível ou excluído') ||
+      lowerBody.includes('looking for something? we\'re sorry. the web address you entered is not a functioning page') ||
+      lowerBody.includes('sorry, we couldn\'t find that page');
 
     // Look for JSON-LD Structured Data
     $('script[type="application/ld+json"]').each((_, el) => {
@@ -145,15 +191,25 @@ export async function fetchSupplierData(url: string, options?: { timeoutMs?: num
       }
     }
 
+    // If 404 content detected and no valid price could be parsed
+    if (is404Content && !result.supplierPrice) {
+      result.status = 'not_found';
+      result.httpStatus = 404;
+      result.is404 = true;
+      result.inStock = false;
+      result.error = 'Erro 404: Página não encontrada ou produto removido do fornecedor';
+      result.message = 'O produto foi excluído ou o anúncio expirou no fornecedor original.';
+      return result;
+    }
+
     // Check Out of Stock Indicators
-    const pageText = $('body').text().toLowerCase();
     if (
-      pageText.includes('não disponível') ||
-      pageText.includes('indisponível') ||
-      pageText.includes('esgotado') ||
-      pageText.includes('fora de estoque') ||
-      pageText.includes('currently unavailable') ||
-      pageText.includes('out of stock')
+      lowerBody.includes('não disponível') ||
+      lowerBody.includes('indisponível') ||
+      lowerBody.includes('esgotado') ||
+      lowerBody.includes('fora de estoque') ||
+      lowerBody.includes('currently unavailable') ||
+      lowerBody.includes('out of stock')
     ) {
       result.inStock = false;
     }
@@ -161,8 +217,16 @@ export async function fetchSupplierData(url: string, options?: { timeoutMs?: num
     result.status = result.inStock ? 'unchanged' : 'out_of_stock';
     return result;
   } catch (err: any) {
-    result.error = err?.message || 'Falha ao consultar fornecedor';
-    result.status = 'error';
+    const errMsg = err?.message || 'Falha ao consultar fornecedor';
+    result.error = errMsg;
+    if (errMsg.includes('404')) {
+      result.status = 'not_found';
+      result.httpStatus = 404;
+      result.is404 = true;
+      result.inStock = false;
+    } else {
+      result.status = 'error';
+    }
     return result;
   }
 }

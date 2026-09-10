@@ -1179,7 +1179,11 @@ class MySqlManager {
         await executeSave();
       } catch (saveErr: any) {
         // If column sidebarBanner is missing, add it and retry once
-        if (saveErr?.message && (saveErr.message.includes('sidebarBanner') || saveErr.message.includes('Unknown column'))) {
+        if (
+          saveErr?.errno === 1054 ||
+          saveErr?.code === 'ER_BAD_FIELD_ERROR' ||
+          (saveErr?.message && (saveErr.message.includes('sidebarBanner') || saveErr.message.includes('Unknown column')))
+        ) {
           console.warn('[Hostinger MySQL] Coluna sidebarBanner ausente em blog_posts, adicionando coluna e tentando novamente...');
           try {
             await this.pool!.query('ALTER TABLE blog_posts ADD COLUMN IF NOT EXISTS sidebarBanner LONGTEXT');

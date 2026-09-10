@@ -55,6 +55,7 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
     storeId: '',
     enabled: true,
     autoApply: false,
+    disableOn404: true,
     frequencyHours: 12,
     markupType: 'direct',
     markupValue: 0,
@@ -83,7 +84,7 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   // Filter state for results
-  const [resultFilter, setResultFilter] = useState<'all' | 'changes' | 'out_of_stock' | 'errors'>('all');
+  const [resultFilter, setResultFilter] = useState<'all' | 'changes' | 'out_of_stock' | 'not_found' | 'errors'>('all');
 
   // Load initial settings
   useEffect(() => {
@@ -95,7 +96,10 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
       setIsLoadingSettings(true);
       const data = await fetchPriceMonitorSettings(storeSlug);
       if (data) {
-        setSettings(data);
+        setSettings({
+          ...data,
+          disableOn404: data.disableOn404 !== undefined ? data.disableOn404 : true
+        });
       }
     } catch (err) {
       console.warn('Erro ao carregar configurações de monitoramento:', err);
@@ -132,15 +136,15 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
       
       setScanResults(data.results || []);
       
-      // Auto select items that have price changes or are out of stock
+      // Auto select items that have price changes, are out of stock, or returned 404
       const selectableIds = (data.results || [])
-        .filter(r => r.productId && (r.status === 'up' || r.status === 'down' || r.status === 'out_of_stock'))
+        .filter(r => r.productId && (r.status === 'up' || r.status === 'down' || r.status === 'out_of_stock' || r.status === 'not_found' || r.is404))
         .map(r => r.productId as string);
       setSelectedResults(selectableIds);
 
-      if (data.appliedCount > 0) {
+      if (data.appliedCount > 0 || (data.disabled404Count && data.disabled404Count > 0)) {
         setStatusMessage({
-          text: `Varredura concluída! ${data.appliedCount} produtos foram atualizados automaticamente.`,
+          text: data.message || `Varredura concluída! ${data.appliedCount} produtos atualizados.`,
           type: 'success'
         });
         if (onProductsUpdated) onProductsUpdated();
@@ -194,6 +198,7 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
     const updatesToApply: any[] = [];
     scanResults.forEach(res => {
       if (res.productId && selectedResults.includes(res.productId)) {
+        const is404 = res.status === 'not_found' || res.is404 || res.httpStatus === 404;
         const item: any = {
           productId: res.productId,
           newSupplierPrice: res.supplierPrice,
@@ -201,14 +206,19 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
           stockStatus: res.inStock ? 'in_stock' : 'out_of_stock'
         };
 
-        if (res.calculatedPrice && res.calculatedPrice > 0) {
-          item.newPrice = res.calculatedPrice;
-        }
-        if (res.calculatedPromo !== undefined) {
-          item.newPromo = res.calculatedPromo;
-        }
-        if (!res.inStock && settings.outOfStockAction === 'pause') {
+        if (is404) {
           item.ativo = false;
+          item.stockStatus = 'out_of_stock';
+        } else {
+          if (res.calculatedPrice && res.calculatedPrice > 0) {
+            item.newPrice = res.calculatedPrice;
+          }
+          if (res.calculatedPromo !== undefined) {
+            item.newPromo = res.calculatedPromo;
+          }
+          if (!res.inStock && settings.outOfStockAction === 'pause') {
+            item.ativo = false;
+          }
         }
 
         updatesToApply.push(item);
@@ -250,14 +260,16 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
 
   const filteredResults = scanResults.filter(r => {
     if (resultFilter === 'changes') return r.status === 'up' || r.status === 'down';
-    if (resultFilter === 'out_of_stock') return r.status === 'out_of_stock' || !r.inStock;
-    if (resultFilter === 'errors') return r.status === 'error' || r.status === 'not_found';
+    if (resultFilter === 'out_of_stock') return (r.status === 'out_of_stock' || !r.inStock) && r.status !== 'not_found' && !r.is404;
+    if (resultFilter === 'not_found') return r.status === 'not_found' || r.is404 || r.httpStatus === 404;
+    if (resultFilter === 'errors') return (r.status === 'error' || r.status === 'not_found' || r.is404);
     return true;
   });
 
   const changedCount = scanResults.filter(r => r.status === 'up' || r.status === 'down').length;
-  const outOfStockCount = scanResults.filter(r => r.status === 'out_of_stock' || !r.inStock).length;
-  const errorCount = scanResults.filter(r => r.status === 'error' || r.status === 'not_found').length;
+  const outOfStockCount = scanResults.filter(r => (r.status === 'out_of_stock' || !r.inStock) && r.status !== 'not_found' && !r.is404).length;
+  const notFoundCount = scanResults.filter(r => r.status === 'not_found' || r.is404 || r.httpStatus === 404).length;
+  const errorCount = scanResults.filter(r => r.status === 'error' && !r.is404 && r.status !== 'not_found').length;
 
   return (
     <div id="price-monitor-tab" className="space-y-6">
@@ -532,6 +544,16 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
                 >
                   Esgotados ({outOfStockCount})
                 </button>
+                {notFoundCount > 0 && (
+                  <button
+                    onClick={() => setResultFilter('not_found')}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${
+                      resultFilter === 'not_found' ? 'bg-red-600 text-white shadow-xs font-semibold' : 'text-red-700 hover:text-red-900'
+                    }`}
+                  >
+                    404 Quebrados ({notFoundCount})
+                  </button>
+                )}
               </div>
 
               <button
@@ -630,34 +652,40 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
                         {result.calculatedPrice ? `R$ ${result.calculatedPrice.toFixed(2)}` : '-'}
                       </td>
                       <td className="p-3.5">
-                        {result.status === 'up' && (
+                        {result.status === 'not_found' || result.is404 || result.httpStatus === 404 ? (
+                          <span className="inline-flex items-center gap-1 text-red-700 font-bold bg-red-100/80 px-2 py-0.5 rounded border border-red-200">
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" /> Erro 404 (Desabilitar)
+                          </span>
+                        ) : result.status === 'up' ? (
                           <span className="inline-flex items-center gap-1 text-red-600 font-bold">
                             <TrendingUp className="w-3.5 h-3.5" /> +{result.diffPercent}%
                           </span>
-                        )}
-                        {result.status === 'down' && (
+                        ) : result.status === 'down' ? (
                           <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
                             <TrendingDown className="w-3.5 h-3.5" /> -{result.diffPercent}%
                           </span>
-                        )}
-                        {result.status === 'unchanged' && (
+                        ) : result.status === 'unchanged' ? (
                           <span className="text-gray-400 font-medium">Inalterado</span>
-                        )}
-                        {result.status === 'out_of_stock' && (
+                        ) : result.status === 'out_of_stock' ? (
                           <span className="inline-flex items-center gap-1 text-orange-600 font-bold">
                             <PackageX className="w-3.5 h-3.5" /> Esgotado
                           </span>
-                        )}
-                        {result.status === 'error' && (
+                        ) : (
                           <span className="text-red-500 font-medium">Erro na leitura</span>
                         )}
                       </td>
                       <td className="p-3.5">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                          result.inStock ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                        }`}>
-                          {result.inStock ? 'Disponível' : 'Indisponível'}
-                        </span>
+                        {result.status === 'not_found' || result.is404 || result.httpStatus === 404 ? (
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+                            404 - Não Encontrado
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                            result.inStock ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {result.inStock ? 'Disponível' : 'Indisponível'}
+                          </span>
+                        )}
                       </td>
                       <td className="p-3.5 pr-6 text-right">
                         <a
@@ -827,6 +855,25 @@ export const PriceMonitorTab: React.FC<PriceMonitorTabProps> = ({
                   <option value="keep">Manter ativo e apenas sinalizar no painel</option>
                   <option value="notify">Apenas gerar registro no histórico</option>
                 </select>
+              </div>
+
+              {/* Disable on 404 toggle */}
+              <div className="flex items-center justify-between p-3.5 bg-red-50/70 rounded-xl border border-red-200">
+                <div className="pr-3">
+                  <p className="font-semibold text-red-950 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                    Desabilitar produto em caso de Erro 404
+                  </p>
+                  <p className="text-xs text-red-800/80 mt-0.5">
+                    Se o link do fornecedor retornar 404 (página ou produto inexistente/removido), o produto será desativado da sua loja automaticamente para não exibir links quebrados aos clientes.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.disableOn404 !== false}
+                  onChange={(e) => setSettings({ ...settings, disableOn404: e.target.checked })}
+                  className="w-5 h-5 text-red-600 rounded border-red-300 focus:ring-red-500"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">

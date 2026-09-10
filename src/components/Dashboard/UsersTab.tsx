@@ -66,6 +66,7 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
   // Status & Feedback
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [copiedPassMsg, setCopiedPassMsg] = useState(false);
 
   async function loadUsers() {
     try {
@@ -130,7 +131,14 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
     };
 
     if (formPassword.trim()) {
+      if (formPassword.trim().length < 4) {
+        setFeedback({ type: 'error', message: 'A senha deve ter no mínimo 4 caracteres.' });
+        setSaving(false);
+        return;
+      }
       payload.password = formPassword.trim();
+      (payload as any).senha = formPassword.trim();
+      (payload as any).newPassword = formPassword.trim();
     }
 
     try {
@@ -162,9 +170,12 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
         return;
       }
 
+      const hasNewPassword = Boolean(formPassword.trim());
       setFeedback({
         type: 'success',
-        message: editingUser ? 'Usuário atualizado com sucesso!' : 'Novo usuário criado com sucesso!'
+        message: editingUser
+          ? (hasNewPassword ? 'Usuário e nova senha atualizados com sucesso!' : 'Usuário atualizado com sucesso!')
+          : 'Novo usuário criado com sucesso!'
       });
 
       setIsModalOpen(false);
@@ -237,6 +248,11 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
     }
     setFormPassword(pass);
     setShowPassword(true);
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(pass).catch(() => {});
+      setCopiedPassMsg(true);
+      setTimeout(() => setCopiedPassMsg(false), 3000);
+    }
   }
 
   const filteredUsers = users.filter(u => {
@@ -689,14 +705,21 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
                   <label className="text-xs font-bold text-neutral-700">
                     {editingUser ? 'Alterar Senha (opcional)' : 'Senha de Acesso *'}
                   </label>
-                  <button
-                    type="button"
-                    onClick={generateRandomPassword}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
-                  >
-                    <Sparkles className="w-3 h-3 text-emerald-600" />
-                    <span>Gerar Senha Segura</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {copiedPassMsg && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        Copiada!
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={generateRandomPassword}
+                      className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-600" />
+                      <span>Gerar Senha Segura</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="relative">
                   <input
@@ -708,6 +731,7 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
                     }
                     value={formPassword}
                     onChange={(e) => setFormPassword(e.target.value)}
+                    autoComplete="new-password"
                     className="w-full pl-3.5 pr-10 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-medium text-neutral-900 focus:bg-white focus:border-neutral-900 outline-none"
                   />
                   <button
@@ -718,10 +742,26 @@ export default function UsersTab({ storeSlug, primaryColor = '#2A5C3F' }: UsersT
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {editingUser && (
-                  <p className="text-[11px] text-neutral-400 mt-1">
-                    Preencha este campo somente se desejar redefinir a senha deste usuário.
-                  </p>
+
+                {editingUser && !formPassword && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-neutral-500">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Senha atual protegida com hash Bcrypt. Preencha apenas para alterá-la.</span>
+                  </div>
+                )}
+
+                {formPassword && (
+                  <div className="mt-2 p-2 bg-emerald-50/80 border border-emerald-200 rounded-lg flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-900">
+                      <Key className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                      <span>Nova senha pronta ({formPassword.length} caracteres). Será criptografada ao salvar.</span>
+                    </div>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      formPassword.length >= 8 ? 'bg-emerald-200 text-emerald-900' : formPassword.length >= 5 ? 'bg-amber-200 text-amber-900' : 'bg-rose-200 text-rose-900'
+                    }`}>
+                      {formPassword.length >= 8 ? 'Forte' : formPassword.length >= 5 ? 'Média' : 'Curta'}
+                    </span>
+                  </div>
                 )}
               </div>
 

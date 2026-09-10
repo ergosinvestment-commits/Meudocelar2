@@ -2551,15 +2551,12 @@ export default function BlogSettingsView({
 
             <div className="overflow-hidden rounded-xl border border-neutral-200/90 bg-white shadow-2xs">
               {(() => {
-                const postsWithBanner = blogPosts.filter(p => Boolean(p.sidebarBanner?.imageUrl));
+                const postsWithBanner = blogPosts.filter(p => p.published !== false);
                 if (postsWithBanner.length === 0) {
                   return (
                     <div className="p-8 text-center bg-neutral-50/50">
                       <ImageIcon className="w-8 h-8 mx-auto text-neutral-300 mb-2" />
-                      <p className="text-xs font-bold text-neutral-700">Nenhum banner lateral configurado ainda</p>
-                      <p className="text-[11px] text-neutral-500 mt-1 max-w-sm mx-auto">
-                        Clique no botão <strong className="text-amber-700 font-semibold">+ Novo</strong> acima ou selecione um artigo no formulário abaixo para criar um banner lateral.
-                      </p>
+                      <p className="text-xs font-bold text-neutral-700">Nenhum artigo publicado encontrado</p>
                     </div>
                   );
                 }
@@ -2577,10 +2574,11 @@ export default function BlogSettingsView({
                       </thead>
                       <tbody className="divide-y divide-neutral-100">
                         {postsWithBanner.map((post) => {
-                          const banner = post.sidebarBanner!;
+                          const banner = post.sidebarBanner;
+                          const hasBanner = Boolean(banner?.imageUrl);
                           const isSelected = selectedArticleId === post.id;
-                          const isEnabled = banner.enabled !== false;
-                          const bannerName = banner.altText || banner.title || 'Banner Lateral';
+                          const isEnabled = hasBanner && banner?.enabled !== false;
+                          const bannerName = banner?.altText || banner?.title || 'Banner Lateral';
 
                           return (
                             <tr
@@ -2604,99 +2602,122 @@ export default function BlogSettingsView({
                               </td>
 
                               <td className="py-3 px-4">
-                                <div className="flex items-center gap-2.5">
-                                  <img
-                                    src={normalizeImageUrl(banner.imageUrl || '')}
-                                    alt={bannerName}
-                                    className="w-8 h-10 object-cover rounded-md border border-neutral-200 shrink-0 shadow-2xs"
-                                  />
-                                  <div className="min-w-0">
-                                    <div className="font-medium text-neutral-800 truncate max-w-[200px]" title={bannerName}>
-                                      {bannerName}
-                                    </div>
-                                    {banner.linkUrl ? (
-                                      <div className="text-[10px] text-neutral-400 truncate max-w-[200px]" title={banner.linkUrl}>
-                                        {banner.linkUrl}
+                                {hasBanner ? (
+                                  <div className="flex items-center gap-2.5">
+                                    <img
+                                      src={normalizeImageUrl(banner?.imageUrl || '')}
+                                      alt={bannerName}
+                                      className="w-8 h-10 object-cover rounded-md border border-neutral-200 shrink-0 shadow-2xs"
+                                    />
+                                    <div className="min-w-0">
+                                      <div className="font-medium text-neutral-800 truncate max-w-[200px]" title={bannerName}>
+                                        {bannerName}
                                       </div>
-                                    ) : null}
+                                      {banner?.linkUrl ? (
+                                        <div className="text-[10px] text-neutral-400 truncate max-w-[200px]" title={banner.linkUrl}>
+                                          {banner.linkUrl}
+                                        </div>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                </div>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-neutral-100 text-neutral-500 border border-neutral-200">
+                                    Sem banner personalizado
+                                  </span>
+                                )}
                               </td>
 
                               <td className="py-3 px-4 text-center whitespace-nowrap">
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                    isEnabled
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                      : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
-                                  }`}
-                                >
+                                {hasBanner ? (
                                   <span
-                                    className={`w-1.5 h-1.5 rounded-full ${
-                                      isEnabled ? 'bg-emerald-500' : 'bg-neutral-400'
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                      isEnabled
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : 'bg-neutral-100 text-neutral-500 border border-neutral-200'
                                     }`}
-                                  />
-                                  {isEnabled ? 'Ativo' : 'Desativado'}
-                                </span>
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full ${
+                                        isEnabled ? 'bg-emerald-500' : 'bg-neutral-400'
+                                      }`}
+                                    />
+                                    {isEnabled ? 'Ativo' : 'Desativado'}
+                                  </span>
+                                ) : (
+                                  <span className="text-neutral-400 text-[11px] font-medium">—</span>
+                                )}
                               </td>
 
                               <td className="py-3 px-4 text-right whitespace-nowrap">
                                 <div className="inline-flex items-center justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleBannerStatus(post)}
-                                    disabled={saving}
-                                    title={isEnabled ? 'Desativar banner' : 'Ativar banner'}
-                                    className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                                      isEnabled
-                                        ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
-                                        : 'text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border-neutral-200'
-                                    }`}
-                                  >
-                                    <Power className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditBanner(post)}
-                                    title="Editar banner"
-                                    className="p-1.5 text-neutral-700 bg-white hover:bg-neutral-100 rounded-lg border border-neutral-200 transition cursor-pointer"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-
-                                  {confirmDeleteBannerId === post.id ? (
-                                    <div className="flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">
-                                      <span className="text-[10px] font-bold text-rose-700">Excluir?</span>
+                                  {hasBanner ? (
+                                    <div className="inline-flex items-center gap-1.5">
                                       <button
                                         type="button"
+                                        onClick={() => handleToggleBannerStatus(post)}
                                         disabled={saving}
-                                        onClick={() => handleDeleteBanner(post)}
-                                        className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[10px] font-black rounded cursor-pointer transition shadow-2xs"
+                                        title={isEnabled ? 'Desativar banner' : 'Ativar banner'}
+                                        className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                                          isEnabled
+                                            ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                                            : 'text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border-neutral-200'
+                                        }`}
                                       >
-                                        Sim
+                                        <Power className="w-3.5 h-3.5" />
                                       </button>
+
                                       <button
                                         type="button"
-                                        onClick={() => setConfirmDeleteBannerId(null)}
-                                        className="px-2 py-0.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 text-[10px] font-bold rounded cursor-pointer transition"
+                                        onClick={() => handleEditBanner(post)}
+                                        title="Editar banner"
+                                        className="p-1.5 text-neutral-700 bg-white hover:bg-neutral-100 rounded-lg border border-neutral-200 transition cursor-pointer"
                                       >
-                                        Não
+                                        <Pencil className="w-3.5 h-3.5" />
                                       </button>
+
+                                      {confirmDeleteBannerId === post.id ? (
+                                        <div className="flex items-center gap-1.5 bg-rose-50 px-2 py-1 rounded-lg border border-rose-200">
+                                          <span className="text-[10px] font-bold text-rose-700">Excluir?</span>
+                                          <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() => handleDeleteBanner(post)}
+                                            className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[10px] font-black rounded cursor-pointer transition shadow-2xs"
+                                          >
+                                            Sim
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setConfirmDeleteBannerId(null)}
+                                            className="px-2 py-0.5 bg-neutral-200 hover:bg-neutral-300 text-neutral-700 text-[10px] font-bold rounded cursor-pointer transition"
+                                          >
+                                            Não
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDeleteBannerId(post.id)}
+                                          disabled={saving}
+                                          title="Excluir banner"
+                                          className="p-1.5 text-rose-600 bg-white hover:bg-rose-50 rounded-lg border border-rose-200 transition cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </div>
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => setConfirmDeleteBannerId(post.id)}
-                                      disabled={saving}
-                                      title="Excluir banner"
-                                      className="p-1.5 text-rose-600 bg-white hover:bg-rose-50 rounded-lg border border-rose-200 transition cursor-pointer"
+                                      onClick={() => handleEditBanner(post)}
+                                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Adicionar Banner</span>
                                     </button>
                                   )}
-                                </div>
-                              </td>
+                                    </div>
+                                </td>
                             </tr>
                           );
                         })}
