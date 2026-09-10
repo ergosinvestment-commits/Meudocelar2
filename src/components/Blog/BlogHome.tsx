@@ -33,6 +33,7 @@ interface BlogHomeProps {
   onNavigateToStore: (category?: string) => void;
   onNavigateToInstitutional: (tab?: string) => void;
   onNavigateToContact: () => void;
+  maxMenuCategories?: number;
 }
 
 export default function BlogHome({
@@ -57,6 +58,13 @@ export default function BlogHome({
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
   const [categoriasOpen, setCategoriasOpen] = useState(false);
   const categoriasRef = React.useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -140,6 +148,13 @@ export default function BlogHome({
   const configuredCatNames = blogCategories.filter(c => c.active !== false).map(c => c.name);
   const postCatNames = posts.map(p => p.category).filter(Boolean);
   const categories = ['Todos', ...Array.from(new Set([...configuredCatNames, ...postCatNames]))];
+  
+  // Categories limited for top menu (max 5)
+  const topMenuCatNames = blogCategories
+    .filter(c => c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false')
+    .sort((a, b) => (b.order || 1) - (a.order || 1))
+    .slice(0, 5)
+    .map(c => c.name);
 
   // Filter posts
   const filteredPosts = posts.filter(post => {

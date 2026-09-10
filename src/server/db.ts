@@ -2696,7 +2696,7 @@ class DatabaseManager {
   // BLOG CATEGORIES METHODS
   // ============================================
 
-  public getBlogCategories(storeSlug?: string, onlyActive: boolean = false): BlogCategory[] {
+  public getBlogCategories(storeSlug?: string, onlyActive: boolean = false, maxMenu: number = 5): BlogCategory[] {
     if (!this.data.blogCategories || this.data.blogCategories.length === 0) {
       this.data.blogCategories = [...FALLBACK_BLOG_CATEGORIES];
       this.saveData();
@@ -2708,7 +2708,12 @@ class DatabaseManager {
     if (onlyActive) {
       list = list.filter(c => c.active !== false && (c as any).ativo !== false && (c as any).active !== 0 && (c as any).active !== 'false');
     }
-    return list.map(c => {
+    // Limit to maxMenu categories that have mostrarNoMenu=true for the top menu
+    const menuList = list.filter(c => c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false');
+    const limitedMenuList = maxMenu >= 0 ? menuList.slice(0, maxMenu) : menuList;
+    const nonMenuList = list.filter(c => !(c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false'));
+    
+    return [...limitedMenuList, ...nonMenuList].map(c => {
       const isMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false';
       const isActive = c.active !== false && (c as any).ativo !== false && (c as any).active !== 0 && (c as any).active !== 'false';
       return {
