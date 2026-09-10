@@ -502,9 +502,10 @@ export default function BlogSettingsView({
   }
 
   function handleNewBanner() {
-    // Find first published post without a banner
-    const publishedWithoutBanner = blogPosts.filter(p => p.published !== false && !p.sidebarBanner?.imageUrl);
-    const nextPostId = publishedWithoutBanner[0]?.id || '';
+    // Find first published post without a banner, or fallback to first published post
+    const published = blogPosts.filter(p => p.published !== false);
+    const publishedWithoutBanner = published.filter(p => !p.sidebarBanner?.imageUrl);
+    const nextPostId = publishedWithoutBanner[0]?.id || published[0]?.id || '';
 
     setSelectedArticleId(nextPostId);
     setSidebarBannerImg('');
@@ -2846,6 +2847,23 @@ export default function BlogSettingsView({
                 <p className="text-[11px] text-neutral-400 mt-1.5 leading-relaxed">
                   Envie uma imagem vertical (ex: 300x600 ou formato 4:5 / 9:16). A imagem é otimizada automaticamente.
                 </p>
+
+                {/* Direct Image URL input */}
+                <div className="mt-3">
+                  <label className="block text-[11px] font-bold text-neutral-600 uppercase tracking-wider mb-1">
+                    Ou Cole a URL Direta da Imagem
+                  </label>
+                  <input
+                    type="url"
+                    value={sidebarBannerImg}
+                    onChange={(e) => {
+                      setSidebarBannerImg(e.target.value);
+                      if (e.target.value.trim()) setSidebarBannerEnabled(true);
+                    }}
+                    placeholder="https://images.unsplash.com/... ou URL da imagem"
+                    className="w-full text-xs font-mono px-3.5 py-2.5 rounded-xl border border-neutral-300 focus:outline-none focus:border-amber-600 bg-white shadow-2xs"
+                  />
+                </div>
               </div>
 
               {/* 3. Link de Destino / Afiliado */}

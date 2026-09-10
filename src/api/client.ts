@@ -28,6 +28,56 @@ import {
 
 export const API_BASE = '/api';
 
+// Simple memory + sessionStorage cache with TTL (e.g. 3 minutes)
+const apiCache = new Map<string, { data: any; expiry: number }>();
+const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
+export function clearApiCache() {
+  apiCache.clear();
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith('apicache_')) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {}
+}
+
+async function cachedFetch<T>(cacheKey: string, fetchFn: () => Promise<T>, ttl: number = CACHE_TTL): Promise<T> {
+  const now = Date.now();
+  if (apiCache.has(cacheKey)) {
+    const cached = apiCache.get(cacheKey)!;
+    if (cached.expiry > now) {
+      return cached.data;
+    } else {
+      apiCache.delete(cacheKey);
+    }
+  }
+
+  try {
+    const raw = sessionStorage.getItem(`apicache_${cacheKey}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.expiry > now) {
+        apiCache.set(cacheKey, { data: parsed.data, expiry: parsed.expiry });
+        return parsed.data;
+      } else {
+        sessionStorage.removeItem(`apicache_${cacheKey}`);
+      }
+    }
+  } catch {}
+
+  const data = await fetchFn();
+  const expiry = now + ttl;
+  apiCache.set(cacheKey, { data, expiry });
+  try {
+    sessionStorage.setItem(`apicache_${cacheKey}`, JSON.stringify({ data, expiry }));
+  } catch {}
+
+  return data;
+}
+
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -47,69 +97,73 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export async function fetchStoreConfig(slug: string = 'achadinhos-da-maria'): Promise<StoreConfig> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}?_t=${Date.now()}`);
-    if (!res.ok) {
-      console.warn(`[Client] Aviso ao buscar loja ${slug} (status ${res.status}). Usando configuração padrão.`);
+  return cachedFetch(`store_config_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}`);
+      if (!res.ok) {
+        return { ...FALLBACK_STORE_CONFIG, slug };
+      }
+      const data = await res.json();
+      return data || { ...FALLBACK_STORE_CONFIG, slug };
+    } catch (err) {
       return { ...FALLBACK_STORE_CONFIG, slug };
     }
-    const data = await res.json();
-    return data || { ...FALLBACK_STORE_CONFIG, slug };
-  } catch (err) {
-    console.warn(`[Client] Falha de rede ao buscar loja ${slug}. Usando dados seguros.`);
-    return { ...FALLBACK_STORE_CONFIG, slug };
-  }
+  });
 }
 
 export async function fetchStoreProducts(slug: string = 'achadinhos-da-maria'): Promise<Product[]> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/products?_t=${Date.now()}`);
-    if (!res.ok) {
-      console.warn(`[Client] Aviso ao buscar produtos de ${slug} (status ${res.status}).`);
+  return cachedFetch(`store_products_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/products`);
+      if (!res.ok) return [];
+      const prods = await res.json();
+      return Array.isArray(prods) ? prods : [];
+    } catch (err) {
       return [];
     }
-    const prods = await res.json();
-    if (Array.isArray(prods)) return prods;
-    return [];
-  } catch (err) {
-    console.warn(`[Client] Falha de rede ao buscar produtos.`);
-    return [];
-  }
+  });
 }
 
 export async function fetchStoreCategories(slug: string = 'achadinhos-da-maria', onlyMenu?: boolean): Promise<Category[]> {
-  try {
-    const query = onlyMenu ? '?menu=true&' : '?';
-    const res = await fetch(`${API_BASE}/store/${slug}/categories${query}_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_CATEGORIES;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_CATEGORIES;
-  } catch (err) {
-    return FALLBACK_CATEGORIES;
-  }
+  return cachedFetch(`store_categories_${slug}_${onlyMenu ? 'menu' : 'all'}`, async () => {
+    try {
+      const query = onlyMenu ? '?menu=true' : '';
+      const res = await fetch(`${API_BASE}/store/${slug}/categories${query}`);
+      if (!res.ok) return FALLBACK_CATEGORIES;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_CATEGORIES;
+    } catch (err) {
+      return FALLBACK_CATEGORIES;
+    }
+  });
 }
 
 export async function fetchStorePlatforms(slug: string = 'achadinhos-da-maria'): Promise<Platform[]> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/platforms?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_PLATFORMS;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_PLATFORMS;
-  } catch (err) {
-    return FALLBACK_PLATFORMS;
-  }
+  return cachedFetch(`store_platforms_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/platforms`);
+      if (!res.ok) return FALLBACK_PLATFORMS;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_PLATFORMS;
+    } catch (err) {
+      return FALLBACK_PLATFORMS;
+    }
+  });
 }
 
 export async function fetchAdminPlatforms(slug: string = 'achadinhos-da-maria'): Promise<Platform[]> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/platforms?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_PLATFORMS;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_PLATFORMS;
-  } catch (err) {
-    console.warn('[Client] Usando plataformas padrão para o admin');
-    return FALLBACK_PLATFORMS;
-  }
+  return cachedFetch(`admin_platforms_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/platforms`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return FALLBACK_PLATFORMS;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_PLATFORMS;
+    } catch (err) {
+      return FALLBACK_PLATFORMS;
+    }
+  });
 }
 
 export async function createPlatform(slug: string, platform: Partial<Platform>): Promise<Platform> {
@@ -119,6 +173,7 @@ export async function createPlatform(slug: string, platform: Partial<Platform>):
     body: JSON.stringify(platform)
   });
   if (!res.ok) throw new Error('Failed to create platform');
+  clearApiCache();
   return res.json();
 }
 
@@ -129,6 +184,7 @@ export async function updatePlatform(slug: string, id: string, platform: Partial
     body: JSON.stringify(platform)
   });
   if (!res.ok) throw new Error('Failed to update platform');
+  clearApiCache();
   return res.json();
 }
 
@@ -139,6 +195,7 @@ export async function patchPlatform(slug: string, id: string, patch: Partial<Pla
     body: JSON.stringify(patch)
   });
   if (!res.ok) throw new Error('Failed to patch platform');
+  clearApiCache();
   return res.json();
 }
 
@@ -146,6 +203,7 @@ export async function deletePlatform(slug: string, id: string): Promise<boolean>
   const res = await fetch(`${API_BASE}/admin/store/${slug}/platforms/${id}`, {
     method: 'DELETE'
   });
+  if (res.ok) clearApiCache();
   return res.ok;
 }
 
@@ -168,15 +226,18 @@ export async function changeAdminCredentials(slug: string, newEmail: string, new
 }
 
 export async function fetchAdminCategories(slug: string = 'achadinhos-da-maria'): Promise<Category[]> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/categories?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_CATEGORIES;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_CATEGORIES;
-  } catch (err) {
-    console.warn('[Client] Usando categorias padrão para o admin');
-    return FALLBACK_CATEGORIES;
-  }
+  return cachedFetch(`admin_categories_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/categories`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return FALLBACK_CATEGORIES;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_CATEGORIES;
+    } catch (err) {
+      return FALLBACK_CATEGORIES;
+    }
+  });
 }
 
 export async function createCategory(slug: string, category: Partial<Category>): Promise<Category> {
@@ -186,6 +247,7 @@ export async function createCategory(slug: string, category: Partial<Category>):
     body: JSON.stringify(category)
   });
   if (!res.ok) throw new Error('Failed to create category');
+  clearApiCache();
   return res.json();
 }
 
@@ -196,6 +258,7 @@ export async function updateCategory(slug: string, id: string, category: Partial
     body: JSON.stringify(category)
   });
   if (!res.ok) throw new Error('Failed to update category');
+  clearApiCache();
   return res.json();
 }
 
@@ -206,6 +269,7 @@ export async function patchCategory(slug: string, id: string, patch: Partial<Cat
     body: JSON.stringify(patch)
   });
   if (!res.ok) throw new Error('Failed to patch category');
+  clearApiCache();
   return res.json();
 }
 
@@ -213,19 +277,23 @@ export async function deleteCategory(slug: string, id: string): Promise<boolean>
   const res = await fetch(`${API_BASE}/admin/store/${slug}/categories/${id}`, {
     method: 'DELETE'
   });
+  if (res.ok) clearApiCache();
   return res.ok;
 }
 
 export async function fetchAdminProducts(slug: string = 'achadinhos-da-maria'): Promise<Product[]> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/products?_t=${Date.now()}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch (err) {
-    console.warn('[Client] Erro ao buscar produtos para o admin:', err);
-    return [];
-  }
+  return cachedFetch(`admin_products_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/products`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      return [];
+    }
+  });
 }
 
 export async function updateStoreConfig(slug: string, config: Partial<StoreConfig>): Promise<StoreConfig> {
@@ -235,6 +303,7 @@ export async function updateStoreConfig(slug: string, config: Partial<StoreConfi
     body: JSON.stringify(config)
   });
   if (!res.ok) throw new Error('Failed to update store config');
+  clearApiCache();
   return res.json();
 }
 
@@ -245,6 +314,7 @@ export async function createProduct(slug: string, product: Partial<Product>): Pr
     body: JSON.stringify(product)
   });
   if (!res.ok) throw new Error('Failed to create product');
+  clearApiCache();
   return res.json();
 }
 
@@ -255,6 +325,7 @@ export async function updateProduct(slug: string, id: string, product: Partial<P
     body: JSON.stringify(product)
   });
   if (!res.ok) throw new Error('Failed to update product');
+  clearApiCache();
   return res.json();
 }
 
@@ -265,6 +336,7 @@ export async function patchProduct(slug: string, id: string, patch: Partial<Prod
     body: JSON.stringify(patch)
   });
   if (!res.ok) throw new Error('Failed to patch product');
+  clearApiCache();
   return res.json();
 }
 
@@ -272,6 +344,7 @@ export async function deleteProduct(slug: string, id: string): Promise<boolean> 
   const res = await fetch(`${API_BASE}/admin/store/${slug}/products/${id}`, {
     method: 'DELETE'
   });
+  if (res.ok) clearApiCache();
   return res.ok;
 }
 
@@ -569,28 +642,32 @@ export async function fetchPriceLogs(slug: string = 'achadinhos-da-maria', limit
 // ============================================
 
 export async function fetchPublicBlogPosts(slug: string = 'achadinhos-da-maria'): Promise<BlogPost[]> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/posts?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_BLOG_POSTS;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_POSTS;
-  } catch (err) {
-    return FALLBACK_BLOG_POSTS;
-  }
+  return cachedFetch(`public_blog_posts_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/posts`);
+      if (!res.ok) return FALLBACK_BLOG_POSTS;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_POSTS;
+    } catch (err) {
+      return FALLBACK_BLOG_POSTS;
+    }
+  });
 }
 
 export async function fetchBlogPostBySlug(slug: string = 'achadinhos-da-maria', postSlug: string): Promise<BlogPost | null> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/posts/${postSlug}?_t=${Date.now()}`);
-    if (!res.ok) {
+  return cachedFetch(`blog_post_${slug}_${postSlug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/posts/${postSlug}`);
+      if (!res.ok) {
+        const fallback = FALLBACK_BLOG_POSTS.find(p => p.slug === postSlug || p.id === postSlug);
+        return fallback || null;
+      }
+      return await res.json();
+    } catch (err) {
       const fallback = FALLBACK_BLOG_POSTS.find(p => p.slug === postSlug || p.id === postSlug);
       return fallback || null;
     }
-    return await res.json();
-  } catch (err) {
-    const fallback = FALLBACK_BLOG_POSTS.find(p => p.slug === postSlug || p.id === postSlug);
-    return fallback || null;
-  }
+  });
 }
 
 export async function recordBlogPostView(slug: string = 'achadinhos-da-maria', id: string): Promise<void> {
@@ -627,16 +704,18 @@ export async function submitContactMessage(
 // ============================================
 
 export async function fetchAdminBlogPosts(slug: string = 'achadinhos-da-maria'): Promise<BlogPost[]> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/posts?_t=${Date.now()}`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) return FALLBACK_BLOG_POSTS;
-    const data = await res.json();
-    return Array.isArray(data) ? data : FALLBACK_BLOG_POSTS;
-  } catch {
-    return FALLBACK_BLOG_POSTS;
-  }
+  return cachedFetch(`admin_blog_posts_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/posts`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return FALLBACK_BLOG_POSTS;
+      const data = await res.json();
+      return Array.isArray(data) ? data : FALLBACK_BLOG_POSTS;
+    } catch {
+      return FALLBACK_BLOG_POSTS;
+    }
+  });
 }
 
 export async function saveAdminBlogPost(slug: string = 'achadinhos-da-maria', post: Partial<BlogPost>): Promise<BlogPost> {
@@ -654,6 +733,7 @@ export async function saveAdminBlogPost(slug: string = 'achadinhos-da-maria', po
   if (!res.ok) {
     throw new Error('Falha ao salvar artigo');
   }
+  clearApiCache();
   return await res.json();
 }
 
@@ -662,12 +742,13 @@ export async function deleteAdminBlogPost(slug: string = 'achadinhos-da-maria', 
     method: 'DELETE',
     headers: getAuthHeaders()
   });
+  if (res.ok) clearApiCache();
   return res.ok;
 }
 
 export async function fetchAdminMessages(slug: string = 'achadinhos-da-maria'): Promise<ContactMessage[]> {
   try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/messages?_t=${Date.now()}`, {
+    const res = await fetch(`${API_BASE}/admin/store/${slug}/messages`, {
       headers: getAuthHeaders()
     });
     if (!res.ok) return [];
@@ -690,26 +771,30 @@ export async function deleteAdminMessage(slug: string = 'achadinhos-da-maria', i
 // ============================================
 
 export async function fetchPublicBlogSettings(slug: string = 'achadinhos-da-maria'): Promise<BlogSettings> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/blog-settings?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_BLOG_SETTINGS;
-    const data = await res.json();
-    return data || FALLBACK_BLOG_SETTINGS;
-  } catch {
-    return FALLBACK_BLOG_SETTINGS;
-  }
+  return cachedFetch(`public_blog_settings_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/blog-settings`);
+      if (!res.ok) return FALLBACK_BLOG_SETTINGS;
+      const data = await res.json();
+      return data || FALLBACK_BLOG_SETTINGS;
+    } catch {
+      return FALLBACK_BLOG_SETTINGS;
+    }
+  });
 }
 
 export async function fetchAdminBlogSettings(slug: string = 'achadinhos-da-maria'): Promise<BlogSettings> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/blog-settings?_t=${Date.now()}`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) return FALLBACK_BLOG_SETTINGS;
-    return await res.json();
-  } catch {
-    return FALLBACK_BLOG_SETTINGS;
-  }
+  return cachedFetch(`admin_blog_settings_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/blog-settings`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return FALLBACK_BLOG_SETTINGS;
+      return await res.json();
+    } catch {
+      return FALLBACK_BLOG_SETTINGS;
+    }
+  });
 }
 
 export async function saveAdminBlogSettings(slug: string = 'achadinhos-da-maria', settings: Partial<BlogSettings>): Promise<BlogSettings> {
@@ -721,31 +806,36 @@ export async function saveAdminBlogSettings(slug: string = 'achadinhos-da-maria'
   if (!res.ok) {
     throw new Error('Falha ao salvar configurações do blog');
   }
+  clearApiCache();
   return await res.json();
 }
 
 export async function fetchPublicBlogCategories(slug: string = 'achadinhos-da-maria'): Promise<BlogCategory[]> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/blog-categories?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_BLOG_CATEGORIES;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_CATEGORIES;
-  } catch {
-    return FALLBACK_BLOG_CATEGORIES;
-  }
+  return cachedFetch(`public_blog_categories_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/blog-categories`);
+      if (!res.ok) return FALLBACK_BLOG_CATEGORIES;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_CATEGORIES;
+    } catch {
+      return FALLBACK_BLOG_CATEGORIES;
+    }
+  });
 }
 
 export async function fetchAdminBlogCategories(slug: string = 'achadinhos-da-maria'): Promise<BlogCategory[]> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/blog-categories?_t=${Date.now()}`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) return FALLBACK_BLOG_CATEGORIES;
-    const data = await res.json();
-    return Array.isArray(data) ? data : FALLBACK_BLOG_CATEGORIES;
-  } catch {
-    return FALLBACK_BLOG_CATEGORIES;
-  }
+  return cachedFetch(`admin_blog_categories_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/blog-categories`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return FALLBACK_BLOG_CATEGORIES;
+      const data = await res.json();
+      return Array.isArray(data) ? data : FALLBACK_BLOG_CATEGORIES;
+    } catch {
+      return FALLBACK_BLOG_CATEGORIES;
+    }
+  });
 }
 
 export async function saveAdminBlogCategory(slug: string = 'achadinhos-da-maria', cat: Partial<BlogCategory>): Promise<BlogCategory> {
@@ -762,6 +852,7 @@ export async function saveAdminBlogCategory(slug: string = 'achadinhos-da-maria'
   if (!res.ok) {
     throw new Error('Falha ao salvar categoria do blog');
   }
+  clearApiCache();
   return await res.json();
 }
 
@@ -770,31 +861,36 @@ export async function deleteAdminBlogCategory(slug: string = 'achadinhos-da-mari
     method: 'DELETE',
     headers: getAuthHeaders()
   });
+  if (res.ok) clearApiCache();
   return res.ok;
 }
 
 export async function fetchPublicBlogEditors(slug: string = 'achadinhos-da-maria'): Promise<BlogEditor[]> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/blog-editors?_t=${Date.now()}`);
-    if (!res.ok) return FALLBACK_BLOG_EDITORS;
-    const data = await res.json();
-    return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_EDITORS;
-  } catch {
-    return FALLBACK_BLOG_EDITORS;
-  }
+  return cachedFetch(`public_blog_editors_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/blog-editors`);
+      if (!res.ok) return FALLBACK_BLOG_EDITORS;
+      const data = await res.json();
+      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_EDITORS;
+    } catch {
+      return FALLBACK_BLOG_EDITORS;
+    }
+  });
 }
 
 export async function fetchAdminBlogEditors(slug: string = 'achadinhos-da-maria'): Promise<BlogEditor[]> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/blog-editors?_t=${Date.now()}`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) return FALLBACK_BLOG_EDITORS;
-    const data = await res.json();
-    return Array.isArray(data) ? data : FALLBACK_BLOG_EDITORS;
-  } catch {
-    return FALLBACK_BLOG_EDITORS;
-  }
+  return cachedFetch(`admin_blog_editors_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/blog-editors`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return FALLBACK_BLOG_EDITORS;
+      const data = await res.json();
+      return Array.isArray(data) ? data : FALLBACK_BLOG_EDITORS;
+    } catch {
+      return FALLBACK_BLOG_EDITORS;
+    }
+  });
 }
 
 export async function saveAdminBlogEditor(slug: string = 'achadinhos-da-maria', editor: Partial<BlogEditor>): Promise<BlogEditor> {
@@ -811,6 +907,7 @@ export async function saveAdminBlogEditor(slug: string = 'achadinhos-da-maria', 
   if (!res.ok) {
     throw new Error('Falha ao salvar perfil do editor');
   }
+  clearApiCache();
   return await res.json();
 }
 
@@ -819,6 +916,7 @@ export async function deleteAdminBlogEditor(slug: string = 'achadinhos-da-maria'
     method: 'DELETE',
     headers: getAuthHeaders()
   });
+  if (res.ok) clearApiCache();
   return res.ok;
 }
 
@@ -849,25 +947,29 @@ export async function fetchBlogSqlScript(slug: string = 'achadinhos-da-maria'): 
 // ============================================
 
 export async function fetchPublicInstitutional(slug: string = 'achadinhos-da-maria'): Promise<InstitutionalData | null> {
-  try {
-    const res = await fetch(`${API_BASE}/store/${slug}/institutional?_t=${Date.now()}`);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  return cachedFetch(`public_institutional_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/store/${slug}/institutional`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function fetchAdminInstitutional(slug: string = 'achadinhos-da-maria'): Promise<InstitutionalData | null> {
-  try {
-    const res = await fetch(`${API_BASE}/admin/store/${slug}/institutional?_t=${Date.now()}`, {
-      headers: getAuthHeaders()
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  return cachedFetch(`admin_institutional_${slug}`, async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/store/${slug}/institutional`, {
+        headers: getAuthHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function saveAdminInstitutional(
@@ -883,6 +985,7 @@ export async function saveAdminInstitutional(
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData?.error || 'Falha ao salvar dados institucionais no servidor');
   }
+  clearApiCache();
   return await res.json();
 }
 

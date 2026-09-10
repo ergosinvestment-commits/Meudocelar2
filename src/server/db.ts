@@ -2572,17 +2572,39 @@ class DatabaseManager {
     if (!this.data.blogCategories) {
       this.data.blogCategories = [...FALLBACK_BLOG_CATEGORIES];
     }
-    const idx = this.data.blogCategories.findIndex(c => c.id === id);
-    if (idx === -1) return null;
+    let idx = this.data.blogCategories.findIndex(c => c.id === id);
+    if (idx === -1 && id) {
+      idx = this.data.blogCategories.findIndex(c => c.slug === id || (c.name && id && c.name.toLowerCase() === id.toLowerCase()));
+    }
+    if (idx === -1 && data.slug) {
+      idx = this.data.blogCategories.findIndex(c => c.slug === data.slug);
+    }
+    if (idx === -1 && data.name) {
+      idx = this.data.blogCategories.findIndex(c => c.name?.toLowerCase() === data.name?.toLowerCase());
+    }
+
+    if (idx === -1) {
+      return this.createBlogCategory('achadinhos-da-maria', { ...data, id: id || data.id });
+    }
 
     const current = this.data.blogCategories[idx];
     const oldName = current.name;
     const newName = data.name?.trim();
 
+    const slug = (data.slug && data.slug.trim())
+      ? data.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      : (newName || current.name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
     const updated: BlogCategory = {
       ...current,
       ...data,
+      id: current.id || id || `blog-cat-${Date.now()}`,
       name: newName || current.name,
+      slug,
+      icon: data.icon?.trim() || current.icon || '📑',
+      description: data.description !== undefined ? data.description.trim() : (current.description || ''),
+      order: typeof data.order === 'number' ? data.order : (current.order || 1),
+      active: data.active !== undefined ? Boolean(data.active) : (current.active !== false),
       mostrarNoMenu: data.mostrarNoMenu !== undefined ? Boolean(data.mostrarNoMenu) : (current.mostrarNoMenu !== false),
       updatedAt: new Date().toISOString()
     };
