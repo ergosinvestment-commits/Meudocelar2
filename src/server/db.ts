@@ -2581,7 +2581,7 @@ class DatabaseManager {
     }
 
     let updatedSidebarBanner = current.articleSidebarBanner;
-    if (updates.articleSidebarBanner) {
+    if (updates.articleSidebarBanner !== undefined && updates.articleSidebarBanner !== null) {
       updatedSidebarBanner = {
         ...current.articleSidebarBanner,
         ...updates.articleSidebarBanner,
