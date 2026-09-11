@@ -88,14 +88,22 @@ if (file_exists($envFile)) {
 }
 
 // Se foi salvo via painel em db_config.json
-$savedConfig = __DIR__ . '/db_config.json';
-if (file_exists($savedConfig)) {
-    $cfg = json_decode(file_get_contents($savedConfig), true);
-    if (!empty($cfg['host'])) $dbHost = $cfg['host'];
-    if (!empty($cfg['port'])) $dbPort = $cfg['port'];
-    if (!empty($cfg['database'])) $dbName = $cfg['database'];
-    if (!empty($cfg['user'])) $dbUser = $cfg['user'];
-    if (isset($cfg['password'])) $dbPass = $cfg['password'];
+$savedConfigPaths = [
+    __DIR__ . '/../../data/db_config.json',
+    __DIR__ . '/../data/db_config.json',
+    dirname(__DIR__) . '/data/db_config.json',
+    __DIR__ . '/db_config.json'
+];
+foreach ($savedConfigPaths as $savedConfig) {
+    if (file_exists($savedConfig)) {
+        $cfg = json_decode(file_get_contents($savedConfig), true);
+        if (!empty($cfg['host'])) $dbHost = $cfg['host'];
+        if (!empty($cfg['port'])) $dbPort = $cfg['port'];
+        if (!empty($cfg['database'])) $dbName = $cfg['database'];
+        if (!empty($cfg['user'])) $dbUser = $cfg['user'];
+        if (isset($cfg['password'])) $dbPass = $cfg['password'];
+        break;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -763,7 +771,7 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
 
             if (password_verify($password, $storedHash)) {
                 $passMatches = true;
-            } elseif ($storedHash === $password || ($password === 'admin' && $user['username'] === 'admin')) {
+            } elseif (!empty($storedHash) && $storedHash === $password) {
                 $passMatches = true;
                 // Rehash para bcrypt moderno
                 $newHash = password_hash($password, PASSWORD_BCRYPT);
@@ -798,12 +806,14 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
     }
 
     // 2. Fallback para credenciais da tabela stores
-    $expectedUser = $store['adminUser'] ?? 'admin';
-    $expectedEmail = $store['adminEmail'] ?? 'admin@achadinhosdamaria.com.br';
-    $expectedPass = $store['adminPassword'] ?? 'admin';
+    $expectedUser = trim($store['adminUser'] ?? '');
+    $expectedEmail = trim($store['adminEmail'] ?? '');
+    $expectedPass = trim($store['adminPassword'] ?? '');
 
-    $isLoginMatch = ($login === $expectedUser || $login === $expectedEmail || $login === 'admin');
-    $isPassMatch = password_verify($password, $expectedPass) || ($password === $expectedPass) || ($password === 'admin' && ($expectedUser === 'admin' || $login === 'admin'));
+    $isLoginMatch = (!empty($expectedUser) && strcasecmp($login, $expectedUser) === 0) ||
+                    (!empty($expectedEmail) && strcasecmp($login, $expectedEmail) === 0);
+
+    $isPassMatch = !empty($expectedPass) && (password_verify($password, $expectedPass) || ($password === $expectedPass));
 
     if ($isLoginMatch && $isPassMatch) {
         // Se a senha antiga era plain-text, atualiza para bcrypt
@@ -861,7 +871,12 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/users$#', $path, $m) && $method 
     $nome = trim($body['nome'] ?? 'Novo Usuário');
     $email = trim($body['email'] ?? '');
     $username = trim($body['username'] ?? '');
-    $rawPass = trim($body['password'] ?? 'admin123');
+    $rawPass = trim($body['password'] ?? '');
+    if (empty($rawPass)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'A senha do usuário é obrigatória.']);
+        exit;
+    }
     $role = $body['role'] ?? 'ADMIN';
     $ativo = isset($body['ativo']) ? ($body['ativo'] ? 1 : 0) : 1;
     $avatar = $body['avatar'] ?? '';

@@ -62,23 +62,7 @@ export default function AdminLoginModal({
       }
     } catch (err) {
       console.error('Error logging in:', err);
-      // Fallback local verification for offline or mock mode
-      if (
-        (login.trim().toLowerCase() === 'admin' || login.trim().toLowerCase().includes('admin')) &&
-        (password.trim() === 'admin' || password.trim() === 'admin123')
-      ) {
-        const sessionData = {
-          authenticated: true,
-          storeSlug,
-          user: { name: 'Administrador', email: login },
-          token: 'admin-fallback-' + Date.now(),
-          loginAt: new Date().toISOString()
-        };
-        localStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
-        onSuccess();
-      } else {
-        setErrorMsg('Erro ao conectar ao servidor. Verifique suas credenciais.');
-      }
+      setErrorMsg('Erro ao autenticar. Verifique sua conexão ou confirme seus dados de acesso cadastrados no banco.');
     } finally {
       setIsLoading(false);
     }

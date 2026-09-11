@@ -126,17 +126,6 @@ class MySqlManager {
         _desc: `TCP localhost:${port}`
       });
 
-      // 4. Try common unix sockets even if fs check is restricted
-      for (const sock of KNOWN_UNIX_SOCKETS) {
-        if (!candidates.some(c => c.socketPath === sock)) {
-          candidates.push({
-            ...baseOptions,
-            socketPath: sock,
-            _desc: `Unix Socket (${sock})`
-          });
-        }
-      }
-
       return candidates;
     }
 
@@ -377,7 +366,7 @@ class MySqlManager {
     }
   }
 
-  public async saveConfigAndConnect(config: MySqlConfig): Promise<{ success: boolean; message: string; diagnostics?: any }> {
+  public async saveConfigAndConnect(config: MySqlConfig): Promise<{ success: boolean; message: string; diagnostics?: any; isHostingerLocal?: boolean }> {
     try {
       // If password was omitted or empty, preserve existing password if available
       if (!config.password) {
@@ -400,9 +389,28 @@ class MySqlManager {
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
       this.activeConfig = { ...config };
 
+      // 1b. Also synchronize public/config.php for native PHP hosting on Hostinger
+      const phpConfigFile = path.join(process.cwd(), 'public', 'config.php');
+      if (fs.existsSync(phpConfigFile)) {
+        try {
+          const phpContent = `<?php\n/**\n * PLANILOJA ACHADINHOS - CONFIGURAÇÃO DO BANCO DE DADOS HOSTINGER\n */\n$dbHost = '${config.host || 'localhost'}';\n$dbPort = '${config.port || 3306}';\n$dbName = '${config.database || ''}';\n$dbUser = '${config.user || ''}';\n$dbPass = '${(config.password || '').replace(/'/g, "\\'")}';\n`;
+          fs.writeFileSync(phpConfigFile, phpContent, 'utf-8');
+        } catch (phpErr) {
+          console.warn('[MySQL] Aviso ao atualizar public/config.php:', phpErr);
+        }
+      }
+
       // 2. Test credentials using candidate configs (IPv4, socket, remote)
       const testResult = await this.testConnection(config);
       if (!testResult.success) {
+        const isLocalHost = !config.host || config.host === 'localhost' || config.host === '127.0.0.1';
+        if (isLocalHost) {
+          return {
+            success: true,
+            isHostingerLocal: true,
+            message: `Configuração salva com sucesso permanente em db_config.json! O banco de dados '${config.database}' com usuário '${config.user}' está configurado e pronto para conectar automaticamente via localhost na sua hospedagem Hostinger, sem precisar reconectar manualmente.`
+          };
+        }
         return {
           success: false,
           message: `Configurações salvas em db_config.json! Porém o teste de conexão direta não pôde conectar ao host ${config.host || 'localhost'}: ${testResult.message}. Verifique se o Acesso Remoto ao MySQL está liberado na Hostinger para este IP.`

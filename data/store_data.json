@@ -462,7 +462,7 @@
     }
   ],
   "views": {
-    "achadinhos-da-maria": 1499
+    "achadinhos-da-maria": 1500
   },
   "users": [
     {
@@ -514,7 +514,7 @@
       "readTime": "4 min de leitura",
       "destaque": true,
       "status": "published",
-      "views": 360,
+      "views": 361,
       "publishedAt": "2026-08-28T14:00:00Z",
       "createdAt": "2026-08-28T14:00:00Z",
       "sidebarBanner": {
@@ -546,7 +546,7 @@
       "readTime": "5 min de leitura",
       "destaque": false,
       "status": "published",
-      "views": 231,
+      "views": 232,
       "publishedAt": "2026-08-25T10:30:00Z",
       "createdAt": "2026-08-25T10:30:00Z",
       "sidebarBanner": {
@@ -581,7 +581,7 @@
       "readTime": "3 min de leitura",
       "destaque": false,
       "status": "published",
-      "views": 195,
+      "views": 196,
       "publishedAt": "2026-08-20T16:15:00Z",
       "createdAt": "2026-08-20T16:15:00Z"
     }
@@ -609,7 +609,9 @@
       "description": "Dicas práticas para closets, despensas e otimização de espaço.",
       "order": 2,
       "active": true,
-      "mostrarNoMenu": true
+      "mostrarNoMenu": true,
+      "exibirNoMenu": true,
+      "updatedAt": "2026-09-11T17:01:02.879Z"
     },
     {
       "id": "blog-cat-3",
@@ -631,7 +633,8 @@
       "description": "Guia de cupons, comparativos de preços e garimpos confiáveis.",
       "order": 4,
       "active": true,
-      "mostrarNoMenu": true
+      "mostrarNoMenu": false,
+      "updatedAt": "2026-09-11T16:57:18.686Z"
     },
     {
       "id": "blog-cat-5",
@@ -642,7 +645,8 @@
       "description": "Dispositivos inteligentes, automação e gadgets práticos.",
       "order": 5,
       "active": true,
-      "mostrarNoMenu": true
+      "mostrarNoMenu": false,
+      "updatedAt": "2026-09-11T16:57:53.633Z"
     }
   ],
   "blogSettings": {

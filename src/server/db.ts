@@ -1283,11 +1283,8 @@ class DatabaseManager {
       }
 
       const { match, needsRehash } = verifyPassword(cleanPass, matchedUser.password);
-      // Only allow fallback to default admin password if the stored password was never customized (i.e. is plain admin or empty)
-      const isInitialDefault = matchedUser.password === 'admin' || matchedUser.password === 'admin123' || !matchedUser.password;
-      const isDefaultFallback = isInitialDefault && (cleanPass === 'admin' || cleanPass === 'admin123');
 
-      if (match || isDefaultFallback) {
+      if (match) {
         if (needsRehash || (!matchedUser.password.startsWith('$2a$') && !matchedUser.password.startsWith('$2b$'))) {
           matchedUser.password = hashPassword(cleanPass);
         }
@@ -1314,21 +1311,24 @@ class DatabaseManager {
     }
 
     // Fallback to store legacy admin credentials
-    const expectedUser = (store.adminUser || 'admin').trim().toLowerCase();
-    const expectedEmail = (store.adminEmail || 'admin@achadinhosdamaria.com.br').trim().toLowerCase();
-    const storedPass = (store.adminPassword || 'admin').trim();
+    const expectedUser = (store.adminUser || '').trim().toLowerCase();
+    const expectedEmail = (store.adminEmail || '').trim().toLowerCase();
+    const storedPass = (store.adminPassword || '').trim();
 
-    const isLoginMatch = cleanLogin === expectedUser || cleanLogin === expectedEmail || cleanLogin === 'admin';
+    const isLoginMatch = (expectedUser && cleanLogin === expectedUser) || (expectedEmail && cleanLogin === expectedEmail);
     if (!isLoginMatch) {
       return { success: false, message: 'Usuário ou e-mail não encontrado.' };
     }
 
-    const { match, needsRehash } = verifyPassword(cleanPass, storedPass);
-    const isDefaultFallback = cleanPass === 'admin' || cleanPass === 'admin123';
+    if (!storedPass) {
+      return { success: false, message: 'Senha não configurada.' };
+    }
 
-    if (match || isDefaultFallback) {
+    const { match, needsRehash } = verifyPassword(cleanPass, storedPass);
+
+    if (match) {
       // If legacy plain password matched, upgrade hash to bcrypt in background
-      if (needsRehash || !storedPass.startsWith('$2a$') && !storedPass.startsWith('$2b$')) {
+      if (needsRehash || (!storedPass.startsWith('$2a$') && !storedPass.startsWith('$2b$'))) {
         const idx = this.data.stores.findIndex(s => s.slug === storeSlug || s.id === store.id);
         if (idx !== -1) {
           this.data.stores[idx].adminPassword = hashPassword(cleanPass);
@@ -2738,11 +2738,13 @@ class DatabaseManager {
       : (data.name || 'nova-categoria').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
     const isMenu = data.mostrarNoMenu !== undefined
-      ? Boolean(data.mostrarNoMenu && data.mostrarNoMenu !== ('false' as any))
-      : true;
+      ? Boolean(data.mostrarNoMenu && data.mostrarNoMenu !== ('false' as any) && (data.mostrarNoMenu as any) !== 0 && (data.mostrarNoMenu as any) !== '0')
+      : ((data as any).exibirNoMenu !== undefined
+          ? Boolean((data as any).exibirNoMenu && (data as any).exibirNoMenu !== ('false' as any) && (data as any).exibirNoMenu !== 0 && (data as any).exibirNoMenu !== '0')
+          : true);
 
     const isActive = data.active !== undefined
-      ? Boolean(data.active && data.active !== ('false' as any))
+      ? Boolean(data.active && data.active !== ('false' as any) && (data.active as any) !== 0 && (data.active as any) !== '0')
       : true;
 
     const newCat: BlogCategory = {
@@ -2758,6 +2760,7 @@ class DatabaseManager {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+    (newCat as any).exibirNoMenu = isMenu;
 
     this.data.blogCategories.push(newCat);
     this.saveData();
@@ -2792,13 +2795,19 @@ class DatabaseManager {
       ? data.slug.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
       : (newName || current.name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
-    const isMenu = data.mostrarNoMenu !== undefined
-      ? Boolean(data.mostrarNoMenu && data.mostrarNoMenu !== ('false' as any))
-      : (current.mostrarNoMenu !== false && (current as any).mostrarNoMenu !== 0 && (current as any).mostrarNoMenu !== '0' && (current as any).mostrarNoMenu !== 'false');
+    const hasMenuInPayload = data.mostrarNoMenu !== undefined || (data as any).exibirNoMenu !== undefined;
+    const isMenu = hasMenuInPayload
+      ? (data.mostrarNoMenu !== undefined
+          ? Boolean(data.mostrarNoMenu && data.mostrarNoMenu !== ('false' as any) && (data.mostrarNoMenu as any) !== 0 && (data.mostrarNoMenu as any) !== '0')
+          : Boolean((data as any).exibirNoMenu && (data as any).exibirNoMenu !== ('false' as any) && (data as any).exibirNoMenu !== 0 && (data as any).exibirNoMenu !== '0'))
+      : (current.mostrarNoMenu !== false && (current as any).mostrarNoMenu !== 0 && (current as any).mostrarNoMenu !== '0' && (current as any).mostrarNoMenu !== 'false' && (current as any).exibirNoMenu !== false && (current as any).exibirNoMenu !== 0 && (current as any).exibirNoMenu !== '0');
 
-    const isActive = data.active !== undefined
-      ? Boolean(data.active && data.active !== ('false' as any))
-      : (current.active !== false && (current as any).active !== 0 && (current as any).active !== '0' && (current as any).active !== 'false');
+    const hasActiveInPayload = data.active !== undefined || (data as any).ativo !== undefined;
+    const isActive = hasActiveInPayload
+      ? (data.active !== undefined
+          ? Boolean(data.active && data.active !== ('false' as any) && (data.active as any) !== 0 && (data.active as any) !== '0')
+          : Boolean((data as any).ativo && (data as any).ativo !== ('false' as any) && (data as any).ativo !== 0 && (data as any).ativo !== '0'))
+      : (current.active !== false && (current as any).active !== 0 && (current as any).active !== '0' && (current as any).active !== 'false' && (current as any).ativo !== false && (current as any).ativo !== 0 && (current as any).ativo !== '0');
 
     const updated: BlogCategory = {
       ...current,
@@ -2813,6 +2822,7 @@ class DatabaseManager {
       mostrarNoMenu: isMenu,
       updatedAt: new Date().toISOString()
     };
+    (updated as any).exibirNoMenu = isMenu;
 
     this.data.blogCategories[idx] = updated;
 

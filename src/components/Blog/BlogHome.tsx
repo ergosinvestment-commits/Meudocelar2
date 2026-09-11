@@ -107,15 +107,22 @@ export default function BlogHome({
         if (cats) setBlogCategories(cats);
       }).catch(() => {});
     }
+    function handleCategorySelected(e: any) {
+      if (e?.detail?.category) {
+        setActiveCategory(e.detail.category);
+      }
+    }
     window.addEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
     window.addEventListener('blog-post-updated', handlePostUpdated as EventListener);
     window.addEventListener('blog-posts-updated', handlePostUpdated as EventListener);
     window.addEventListener('blog-categories-updated', handleCatsUpdated as EventListener);
+    window.addEventListener('blog-category-selected', handleCategorySelected as EventListener);
     return () => {
       window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
       window.removeEventListener('blog-post-updated', handlePostUpdated as EventListener);
       window.removeEventListener('blog-posts-updated', handlePostUpdated as EventListener);
       window.removeEventListener('blog-categories-updated', handleCatsUpdated as EventListener);
+      window.removeEventListener('blog-category-selected', handleCategorySelected as EventListener);
     };
   }, [storeSlug]);
 

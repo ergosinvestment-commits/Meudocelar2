@@ -138,7 +138,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
 
     try {
       setTogglingId(cat.id);
-      const payload: Partial<BlogCategory> = {
+      const payload: Partial<BlogCategory> & { exibirNoMenu?: boolean } = {
         id: cat.id,
         name: cat.name,
         slug: cat.slug,
@@ -146,7 +146,8 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
         description: cat.description || '',
         order: cat.order || 1,
         active: isCatActive(cat),
-        mostrarNoMenu: nextInMenu
+        mostrarNoMenu: nextInMenu,
+        exibirNoMenu: nextInMenu
       };
 
       const saved = await saveAdminBlogCategory(storeSlug, payload);
@@ -223,7 +224,7 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
       setSaving(true);
       setFeedback(null);
 
-      const payload: Partial<BlogCategory> = {
+      const payload: Partial<BlogCategory> & { exibirNoMenu?: boolean } = {
         id: editingCategory?.id,
         name: formName.trim(),
         slug: formSlug.trim() || slugify(formName),
@@ -231,7 +232,8 @@ export default function BlogCategoriesView({ storeSlug, onCategoriesUpdated }: B
         description: formDescription.trim(),
         order: Number(formOrder) || 1,
         active: Boolean(formActive),
-        mostrarNoMenu: Boolean(formMostrarNoMenu)
+        mostrarNoMenu: Boolean(formMostrarNoMenu),
+        exibirNoMenu: Boolean(formMostrarNoMenu)
       };
 
       const saved = await saveAdminBlogCategory(storeSlug, payload);
