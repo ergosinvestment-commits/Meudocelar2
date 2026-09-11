@@ -156,6 +156,24 @@ export default function BlogHome({
     .slice(0, 5)
     .map(c => c.name);
 
+  // The dropdown contains every active configured category and article category.
+  const allCategoryOptions = Array.from(new Set([
+    ...blogCategories
+      .filter(c => {
+        const val = c.active ?? (c as any).ativo;
+        return val !== false && val !== 0 && val !== '0' && val !== 'false';
+      })
+      .map(c => c.name),
+    ...postCatNames
+  ])).map(name => blogCategories.find(c => c.name === name) || {
+    id: `article-category-${name}`,
+    name,
+    slug: name,
+    icon: '📑',
+    active: true,
+    mostrarNoMenu: false
+  } as BlogCategory);
+
   // Filter posts
   const filteredPosts = posts.filter(post => {
     const matchesCat = activeCategory === 'Todos' || post.category === activeCategory;
@@ -297,6 +315,8 @@ export default function BlogHome({
               <button
                 type="button"
                 onClick={() => setCategoriasOpen(!categoriasOpen)}
+                aria-expanded={categoriasOpen}
+                aria-haspopup="listbox"
                 className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-bold uppercase whitespace-nowrap rounded-xl transition cursor-pointer shadow-xs ${
                   categoriasOpen || activeCategory !== 'Todos'
                     ? 'text-white'
@@ -316,7 +336,10 @@ export default function BlogHome({
               {/* Dropdown Menu */}
               {categoriasOpen && (
                 <div className="absolute left-0 top-full mt-2 w-[calc(100vw-32px)] sm:w-80 max-w-[340px] bg-white rounded-2xl shadow-2xl border border-neutral-200/90 py-1.5 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-                  <div className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-neutral-100">
+                  <div
+                    role="listbox"
+                    className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-neutral-100"
+                  >
                     <button
                       type="button"
                       onClick={() => {
@@ -330,12 +353,7 @@ export default function BlogHome({
                       <span>Todas as Categorias</span>
                       <span className="text-[10px] font-normal text-neutral-400">({posts.length})</span>
                     </button>
-                    {blogCategories
-                      .filter(c => {
-                        const val = c.active ?? (c as any).ativo;
-                        return val !== false && val !== 0 && val !== '0' && val !== 'false';
-                      })
-                      .map((cat) => {
+                    {allCategoryOptions.map((cat) => {
                         const isSelected = activeCategory === cat.name;
                         const inTopMenu = cat.mostrarNoMenu !== false && (cat as any).mostrarNoMenu !== 0 && (cat as any).mostrarNoMenu !== '0' && (cat as any).mostrarNoMenu !== 'false';
                         return (

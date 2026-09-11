@@ -19,8 +19,8 @@ async function startServer() {
   // Trust proxy for reverse proxies (Cloud Run, Hostinger, Nginx)
   app.set('trust proxy', 1);
 
-  // Initialize MySQL if configured in environment (non-blocking for fast server boot)
-  mysqlManager.init().then(async (connected) => {
+  // Initialize MySQL before accepting requests so public pages always read the hydrated state.
+  const databaseReady = mysqlManager.init().then(async (connected) => {
     if (connected) {
       console.log('[Hostinger MySQL] Conexão ativa com o banco de dados MySQL.');
       try {
@@ -29,9 +29,20 @@ async function startServer() {
         await mysqlManager.ensureInstitutionalTableExist();
         const mysqlData = await mysqlManager.loadAllDataFromMySql();
 
-        if (mysqlData && Array.isArray(mysqlData.products) && mysqlData.products.length > 0) {
+        const hasRemoteData = Boolean(mysqlData && (
+          (Array.isArray(mysqlData.stores) && mysqlData.stores.length > 0) ||
+          (Array.isArray(mysqlData.products) && mysqlData.products.length > 0) ||
+          (Array.isArray(mysqlData.categories) && mysqlData.categories.length > 0) ||
+          (Array.isArray(mysqlData.platforms) && mysqlData.platforms.length > 0) ||
+          (Array.isArray(mysqlData.posts) && mysqlData.posts.length > 0) ||
+          (Array.isArray(mysqlData.blogCategories) && mysqlData.blogCategories.length > 0) ||
+          (Array.isArray(mysqlData.blogEditors) && mysqlData.blogEditors.length > 0) ||
+          (mysqlData.blogSettings && Object.keys(mysqlData.blogSettings).length > 0)
+        ));
+
+        if (hasRemoteData) {
           db.hydrateFromMySql(mysqlData);
-          console.log(`[Hostinger MySQL] Carregados com sucesso ${mysqlData.products.length} produto(s) e ${mysqlData.stores?.length || 1} loja(s) do MySQL.`);
+          console.log(`[Hostinger MySQL] Dados carregados com sucesso do MySQL (${mysqlData.products?.length || 0} produto(s), ${mysqlData.posts?.length || 0} artigo(s)).`);
         } else {
           // MySQL is connected but has empty tables (fresh database setup on Hostinger)
           console.log('[Hostinger MySQL] Banco MySQL recém-conectado está vazio. Populando tabelas automaticamente com o catálogo local...');
@@ -1520,6 +1531,8 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  await databaseReady;
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Meudocelar running on http://localhost:${PORT}`);
