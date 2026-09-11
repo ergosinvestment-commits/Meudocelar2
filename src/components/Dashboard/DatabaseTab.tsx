@@ -406,37 +406,25 @@ JWT_SECRET=hostinger_prod_key_${Math.random().toString(36).substring(2, 15)}_${D
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
                   diag?.connected
                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : diag?.database && diag.database !== 'store_data.json'
-                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${diag?.connected ? 'bg-emerald-500 animate-pulse' : diag?.database && diag.database !== 'store_data.json' ? 'bg-emerald-600' : 'bg-amber-500'}`} />
-                {diag?.connected
-                  ? 'MySQL Hostinger Conectado'
-                  : diag?.database && diag.database !== 'store_data.json'
-                    ? 'MySQL Hostinger Configurado & Ativo'
-                    : 'Armazenamento Local'}
+                <span className={`w-2 h-2 rounded-full ${diag?.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                {diag?.connected ? 'MySQL Hostinger Ativo' : 'Armazenamento Local'}
               </span>
             </div>
 
             <h3 className="text-base font-bold text-neutral-900 mb-1">
-              {diag?.connected
-                ? 'Hostinger MySQL / MariaDB (Ativo)'
-                : diag?.database && diag.database !== 'store_data.json'
-                  ? `Hostinger MySQL (${diag.database})`
-                  : 'Armazenamento Local'}
+              {diag?.driver || 'Armazenamento JSON Local'}
             </h3>
             <p className="text-xs text-neutral-500 leading-relaxed mb-3">
               {diag?.connected
                 ? `Conectado ao banco '${diag.database}' em '${diag.host}:${diag.port}'. Latência de resposta: ${diag.latencyMs ?? 0}ms.`
-                : diag?.database && diag.database !== 'store_data.json'
-                  ? `Configuração do banco '${diag.database}' salva e ativa permanentemente. Na hospedagem Hostinger, a conexão ocorre automaticamente via localhost sem necessidade de reconectar.`
-                  : 'O servidor está aguardando as credenciais MySQL para conectar diretamente às tabelas.'}
+                : 'O servidor está aguardando as credenciais MySQL para conectar diretamente às tabelas.'}
             </p>
 
-            {/* If there's an active error reported (only show if not standard cloud container localhost refusal) */}
-            {!diag?.connected && diag?.error && !diag?.error.includes('localhost:3306') && !diag?.error.includes('127.0.0.1:3306') && (
+            {/* If there's an active error reported */}
+            {!diag?.connected && diag?.error && (
               <div className="mb-3 p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 leading-relaxed">
                 <span className="font-bold block text-amber-950 mb-0.5">Diagnóstico do Servidor:</span>
                 {diag.error}

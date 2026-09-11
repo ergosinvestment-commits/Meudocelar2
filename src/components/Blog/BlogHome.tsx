@@ -33,7 +33,6 @@ interface BlogHomeProps {
   onNavigateToStore: (category?: string) => void;
   onNavigateToInstitutional: (tab?: string) => void;
   onNavigateToContact: () => void;
-  maxMenuCategories?: number;
 }
 
 export default function BlogHome({
@@ -58,13 +57,6 @@ export default function BlogHome({
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
   const [categoriasOpen, setCategoriasOpen] = useState(false);
   const categoriasRef = React.useRef<HTMLDivElement>(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -107,22 +99,15 @@ export default function BlogHome({
         if (cats) setBlogCategories(cats);
       }).catch(() => {});
     }
-    function handleCategorySelected(e: any) {
-      if (e?.detail?.category) {
-        setActiveCategory(e.detail.category);
-      }
-    }
     window.addEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
     window.addEventListener('blog-post-updated', handlePostUpdated as EventListener);
     window.addEventListener('blog-posts-updated', handlePostUpdated as EventListener);
     window.addEventListener('blog-categories-updated', handleCatsUpdated as EventListener);
-    window.addEventListener('blog-category-selected', handleCategorySelected as EventListener);
     return () => {
       window.removeEventListener('blog-settings-updated', handleBlogSettingsUpdated as EventListener);
       window.removeEventListener('blog-post-updated', handlePostUpdated as EventListener);
       window.removeEventListener('blog-posts-updated', handlePostUpdated as EventListener);
       window.removeEventListener('blog-categories-updated', handleCatsUpdated as EventListener);
-      window.removeEventListener('blog-category-selected', handleCategorySelected as EventListener);
     };
   }, [storeSlug]);
 
@@ -155,13 +140,6 @@ export default function BlogHome({
   const configuredCatNames = blogCategories.filter(c => c.active !== false).map(c => c.name);
   const postCatNames = posts.map(p => p.category).filter(Boolean);
   const categories = ['Todos', ...Array.from(new Set([...configuredCatNames, ...postCatNames]))];
-  
-  // Categories limited for top menu (max 5)
-  const topMenuCatNames = blogCategories
-    .filter(c => c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false')
-    .sort((a, b) => (b.order || 1) - (a.order || 1))
-    .slice(0, 5)
-    .map(c => c.name);
 
   // Filter posts
   const filteredPosts = posts.filter(post => {
@@ -193,61 +171,7 @@ export default function BlogHome({
   const heroSubtitle = blogSettings?.heroSubtitle || 'Artigos práticos com testes reais, truques de organização e seleções dos melhores produtos para transformar sua rotina com economia.';
 
   return (
-    <div
-      className="min-h-screen bg-[#FBFBFA] text-[#1B1B1B] font-['DM_Sans',sans-serif]"
-      onContextMenu={e => {
-        // Disable right-click except on input/textarea elements
-        if (e.target && (e.target as HTMLElement).tagName && 
-            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
-          return;
-        }
-        e.preventDefault();
-      }}
-      onCopy={e => {
-        // Disable Ctrl+C except on input/textarea elements
-        if (e.target && (e.target as HTMLElement).tagName && 
-            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
-          return;
-        }
-        e.preventDefault();
-      }}
-      onCut={e => {
-        // Disable Ctrl+X except on input/textarea elements
-        if (e.target && (e.target as HTMLElement).tagName && 
-            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
-          return;
-        }
-        e.preventDefault();
-      }}
-      onKeydown={e => {
-        // Block common shortcuts except on input/textarea elements
-        if (e.target && (e.target as HTMLElement).tagName && 
-            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
-          return;
-        }
-        
-        // Block Ctrl+C
-        if (e.ctrlKey && e.key === 'c') {
-          e.preventDefault();
-        }
-        // Block Ctrl+X
-        if (e.ctrlKey && e.key === 'x') {
-          e.preventDefault();
-        }
-        // Block Ctrl+U (view source)
-        if (e.ctrlKey && e.key === 'u') {
-          e.preventDefault();
-        }
-        // Block Ctrl+S (save - mostly prevents accidental saves)
-        if (e.ctrlKey && e.key === 's') {
-          e.preventDefault();
-        }
-        // Block F12 (DevTools)
-        if (e.key === 'F12') {
-          e.preventDefault();
-        }
-      }}
-    >
+    <div className="min-h-screen bg-[#FBFBFA] text-[#1B1B1B] font-['DM_Sans',sans-serif]">
       {/* Blog Hero Header with optional custom background image */}
       <section className="relative text-white overflow-hidden py-14 md:py-20 px-4 md:px-6 bg-neutral-950">
         {/* Background Image if configured */}
@@ -449,7 +373,6 @@ export default function BlogHome({
                 const inMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false';
                 return isActive && inMenu;
               })
-              .slice(0, 5)
               .map((cat) => (
                 <button
                   key={cat.id || cat.name}

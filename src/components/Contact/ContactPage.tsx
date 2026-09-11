@@ -308,7 +308,10 @@ export default function ContactPage({
                   <Clock className="w-5 h-5" />
                 </div>
                 <div>
-                  
+                  <span className="block text-xs font-bold">Horário de Análise</span>
+                  <span className="block text-[11px] text-neutral-600">Segunda a Sexta das 09h às 18h</span>
+                </div>
+              </div>
             </div>
 
             {/* FAQ Accordion */}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BlogPost, StoreConfig, BlogSettings, BlogCategory } from './types';
-import { fetchStoreConfig, fetchPublicBlogSettings, fetchPublicBlogCategories } from './api/client';
+import { BlogPost, StoreConfig, BlogSettings } from './types';
+import { fetchStoreConfig, fetchPublicBlogSettings } from './api/client';
 import { FALLBACK_STORE_CONFIG } from './data/defaultData';
 import Navbar from './components/Navbar';
 import BlogHome from './components/Blog/BlogHome';
@@ -37,36 +37,22 @@ export default function App() {
   });
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
   const [blogSettings, setBlogSettings] = useState<BlogSettings | null>(null);
-  const [blogCategories, setBlogCategories] = useState<BlogCategory[]>([]);
 
   // Fetch Store Configuration & Blog Settings for branding
   useEffect(() => {
     async function loadConfig() {
       try {
-        const [cfg, bs, cats] = await Promise.all([
+        const [cfg, bs] = await Promise.all([
           fetchStoreConfig(storeSlug).catch(() => null),
-          fetchPublicBlogSettings(storeSlug).catch(() => null),
-          fetchPublicBlogCategories(storeSlug).catch(() => [])
+          fetchPublicBlogSettings(storeSlug).catch(() => null)
         ]);
         if (cfg) setConfig(cfg);
         if (bs) setBlogSettings(bs);
-        if (cats && Array.isArray(cats)) setBlogCategories(cats);
       } catch {
         setConfig({ ...FALLBACK_STORE_CONFIG, slug: storeSlug });
       }
     }
     loadConfig();
-  }, [storeSlug]);
-
-  // Listen for blog categories updates across the app
-  useEffect(() => {
-    function handleBlogCategoriesUpdated(e: any) {
-      fetchPublicBlogCategories(storeSlug).then(cats => {
-        if (cats && Array.isArray(cats)) setBlogCategories(cats);
-      }).catch(() => null);
-    }
-    window.addEventListener('blog-categories-updated', handleBlogCategoriesUpdated as EventListener);
-    return () => window.removeEventListener('blog-categories-updated', handleBlogCategoriesUpdated as EventListener);
   }, [storeSlug]);
 
   // Listen for blog appearance settings updates across the app
@@ -265,7 +251,6 @@ export default function App() {
             <Navbar
               config={config}
               blogSettings={blogSettings}
-              blogCategories={blogCategories}
               activeNav={viewMode as 'blog' | 'store' | 'institutional' | 'contact'}
               onNavigate={(page) => handleNavigation(page)}
               onOpenAdminModal={() => setLoginModalOpen(true)}

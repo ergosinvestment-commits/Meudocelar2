@@ -84,13 +84,13 @@ class MySqlManager {
       password,
       database,
       waitForConnections: true,
-      connectionLimit: 10,
-      maxIdle: 10,
-      idleTimeout: 60000,
+      connectionLimit: 8,
+      maxIdle: 4,
+      idleTimeout: 30000,
       queueLimit: 0,
       enableKeepAlive: true,
       keepAliveInitialDelay: 5000,
-      connectTimeout: 15000,
+      connectTimeout: 8000,
       ssl: useSsl ? { rejectUnauthorized: false } : undefined
     };
 
@@ -166,9 +166,6 @@ class MySqlManager {
             console.warn('[Hostinger MySQL Pool Event]', err?.code || err?.message);
             if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
               this.reconnect().catch(() => {});
-            } else if (err?.code === 'ENOTFOUND' || err?.code === 'EHOSTUNREACH') {
-              this.isConnected = false;
-              this.connectionError = `Host MySQL inacessível: ${err?.message || ''}`;
             }
           });
 
@@ -317,9 +314,6 @@ class MySqlManager {
             console.warn('[Hostinger MySQL Pool Error]', err?.code || err?.message);
             if (err?.code === 'PROTOCOL_CONNECTION_LOST' || err?.code === 'ECONNRESET' || err?.code === 'ETIMEDOUT') {
               this.reconnect().catch(() => {});
-            } else if (err?.code === 'ENOTFOUND' || err?.code === 'EHOSTUNREACH') {
-              this.isConnected = false;
-              this.connectionError = `Host MySQL inacessível: ${err?.message || ''}`;
             }
           });
 
@@ -334,7 +328,7 @@ class MySqlManager {
         throw lastErr || new Error('Não foi possível estabelecer conexão MySQL com nenhum dos alvos configurados.');
       }
 
-      // Setup keep-alive ping every 15s so Hostinger wait_timeout never closes the socket
+      // Setup keep-alive ping every 20s so Hostinger wait_timeout never closes the socket
       this.keepAliveInterval = setInterval(async () => {
         if (this.pool && this.isConnected) {
           try {
@@ -344,7 +338,7 @@ class MySqlManager {
             await this.reconnect();
           }
         }
-      }, 15000);
+      }, 20000);
       if (this.keepAliveInterval?.unref) {
         this.keepAliveInterval.unref();
       }
@@ -366,7 +360,7 @@ class MySqlManager {
     }
   }
 
-  public async saveConfigAndConnect(config: MySqlConfig): Promise<{ success: boolean; message: string; diagnostics?: any; isHostingerLocal?: boolean }> {
+  public async saveConfigAndConnect(config: MySqlConfig): Promise<{ success: boolean; message: string; diagnostics?: any }> {
     try {
       // If password was omitted or empty, preserve existing password if available
       if (!config.password) {
@@ -389,28 +383,9 @@ class MySqlManager {
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
       this.activeConfig = { ...config };
 
-      // 1b. Also synchronize public/config.php for native PHP hosting on Hostinger
-      const phpConfigFile = path.join(process.cwd(), 'public', 'config.php');
-      if (fs.existsSync(phpConfigFile)) {
-        try {
-          const phpContent = `<?php\n/**\n * PLANILOJA ACHADINHOS - CONFIGURAÇÃO DO BANCO DE DADOS HOSTINGER\n */\n$dbHost = '${config.host || 'localhost'}';\n$dbPort = '${config.port || 3306}';\n$dbName = '${config.database || ''}';\n$dbUser = '${config.user || ''}';\n$dbPass = '${(config.password || '').replace(/'/g, "\\'")}';\n`;
-          fs.writeFileSync(phpConfigFile, phpContent, 'utf-8');
-        } catch (phpErr) {
-          console.warn('[MySQL] Aviso ao atualizar public/config.php:', phpErr);
-        }
-      }
-
       // 2. Test credentials using candidate configs (IPv4, socket, remote)
       const testResult = await this.testConnection(config);
       if (!testResult.success) {
-        const isLocalHost = !config.host || config.host === 'localhost' || config.host === '127.0.0.1';
-        if (isLocalHost) {
-          return {
-            success: true,
-            isHostingerLocal: true,
-            message: `Configuração salva com sucesso permanente em db_config.json! O banco de dados '${config.database}' com usuário '${config.user}' está configurado e pronto para conectar automaticamente via localhost na sua hospedagem Hostinger, sem precisar reconectar manualmente.`
-          };
-        }
         return {
           success: false,
           message: `Configurações salvas em db_config.json! Porém o teste de conexão direta não pôde conectar ao host ${config.host || 'localhost'}: ${testResult.message}. Verifique se o Acesso Remoto ao MySQL está liberado na Hostinger para este IP.`

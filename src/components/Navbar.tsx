@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { StoreConfig, BlogSettings, BlogCategory } from '../types';
+import React, { useState } from 'react';
+import { StoreConfig, BlogSettings } from '../types';
 import {
   BookOpen,
   Store,
@@ -12,10 +12,8 @@ import {
   Instagram,
   Sparkles,
   ChevronRight,
-  ChevronDown,
   ExternalLink,
-  Send,
-  Layers
+  Send
 } from 'lucide-react';
 import { normalizeImageUrl } from '../utils';
 import { getSocialLinks } from '../utils/social';
@@ -23,7 +21,6 @@ import { getSocialLinks } from '../utils/social';
 interface NavbarProps {
   config: StoreConfig | null;
   blogSettings?: BlogSettings | null;
-  blogCategories?: BlogCategory[];
   activeNav: 'blog' | 'store' | 'institutional' | 'contact';
   onNavigate: (page: 'blog' | 'store' | 'institutional' | 'contact') => void;
   onOpenAdminModal?: () => void;
@@ -32,26 +29,11 @@ interface NavbarProps {
 export default function Navbar({
   config,
   blogSettings,
-  blogCategories = [],
   activeNav,
   onNavigate,
   onOpenAdminModal
 }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [categoriasOpen, setCategoriasOpen] = useState(false);
-  const [mobileCategoriasOpen, setMobileCategoriasOpen] = useState(false);
-  const categoriasRef = useRef<HTMLDivElement>(null);
-
-  // Close desktop dropdown on click outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (categoriasRef.current && !categoriasRef.current.contains(e.target as Node)) {
-        setCategoriasOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const social = getSocialLinks(config);
   const primaryColor = blogSettings?.blogPrimaryColor || config?.corPrimaria || '#2A5C3F';
@@ -73,19 +55,6 @@ export default function Navbar({
   const showWhatsApp = blogSettings?.menuShowWhatsApp !== false;
   const showVitrineBtn = blogSettings?.menuShowVitrineBtn !== false;
   const vitrineBtnText = blogSettings?.menuVitrineBtnText || 'Ver Vitrine';
-
-  // Filter active categories for dropdown (checking active & mostrarNoMenu/exibirNoMenu)
-  const activeCategories = blogCategories.filter(c => {
-    const activeVal = c.active ?? (c as any).ativo;
-    if (activeVal === false || activeVal === 0 || activeVal === '0' || activeVal === 'false') {
-      return false;
-    }
-    const menuVal = c.mostrarNoMenu ?? (c as any).exibirNoMenu;
-    if (menuVal !== undefined && (menuVal === false || menuVal === 0 || menuVal === '0' || menuVal === 'false')) {
-      return false;
-    }
-    return true;
-  });
 
   // Top Bar configuration
   const isBlog = activeNav === 'blog';
@@ -190,94 +159,6 @@ export default function Navbar({
             />
             <span>{homeLabel}</span>
           </button>
-
-          {/* Categorias Dropdown Button (Blog Categories) */}
-          <div className="relative" ref={categoriasRef}>
-            <button
-              id="nav-blog-categories"
-              type="button"
-              onClick={() => setCategoriasOpen(!categoriasOpen)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
-                categoriasOpen
-                  ? 'bg-white text-neutral-900 shadow-xs scale-102 ring-2 ring-black/5'
-                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-white/60'
-              }`}
-            >
-              <Menu
-                className="w-3.5 h-3.5"
-                style={{ color: categoriasOpen ? primaryColor : undefined }}
-              />
-              <span>Categorias</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                  categoriasOpen ? 'rotate-180' : ''
-                }`}
-                style={{ color: categoriasOpen ? primaryColor : undefined }}
-              />
-            </button>
-
-            {/* Dropdown Menu (Directly below Categorias button) */}
-            {categoriasOpen && (
-              <div
-                id="blog-categories-dropdown-menu"
-                className="absolute left-0 top-full mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-neutral-200/90 py-1.5 z-50 animate-in fade-in slide-in-from-top-1 duration-150 select-none"
-              >
-                <div className="max-h-[calc(100vh-220px)] overflow-y-auto divide-y divide-neutral-100">
-                  {/* Option: Todas as Categorias */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleNav('blog');
-                      setCategoriasOpen(false);
-                      window.dispatchEvent(
-                        new CustomEvent('blog-category-selected', { detail: { category: 'Todos' } })
-                      );
-                      const el = document.getElementById('articles-section');
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                    className="w-full flex items-center justify-between px-4 py-3 text-xs font-bold uppercase transition text-left cursor-pointer hover:bg-neutral-50 text-neutral-800"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-base">📑</span>
-                      <span>Todas as Categorias</span>
-                    </div>
-                  </button>
-
-                  {/* List of active categories */}
-                  {activeCategories.length === 0 ? (
-                    <div className="px-4 py-6 text-center text-xs text-neutral-500">
-                      Nenhuma categoria cadastrada.
-                    </div>
-                  ) : (
-                    activeCategories.map((cat) => (
-                      <button
-                        key={cat.id || cat.slug || cat.name}
-                        type="button"
-                        onClick={() => {
-                          handleNav('blog');
-                          setCategoriasOpen(false);
-                          window.dispatchEvent(
-                            new CustomEvent('blog-category-selected', {
-                              detail: { category: cat.name, slug: cat.slug }
-                            })
-                          );
-                          const el = document.getElementById('articles-section');
-                          if (el) el.scrollIntoView({ behavior: 'smooth' });
-                        }}
-                        className="w-full flex items-center justify-between px-4 py-3 text-xs font-bold uppercase transition text-left cursor-pointer hover:bg-neutral-50 text-neutral-800 group"
-                      >
-                        <div className="flex items-center gap-2.5 truncate">
-                          <span className="text-base">{cat.icon || '📑'}</span>
-                          <span className="truncate group-hover:text-neutral-900">{cat.name}</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-neutral-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
 
           {showStore && (
             <button
@@ -395,73 +276,6 @@ export default function Navbar({
             </div>
             <ChevronRight className="w-4 h-4 text-neutral-400" />
           </button>
-
-          {/* Categorias (Mobile Accordion / Dropdown) */}
-          <div className="rounded-xl border border-neutral-200/80 overflow-hidden bg-neutral-50/50">
-            <button
-              type="button"
-              onClick={() => setMobileCategoriasOpen(!mobileCategoriasOpen)}
-              className="w-full flex items-center justify-between p-3 text-sm font-bold text-neutral-700 hover:bg-neutral-100/80 transition"
-            >
-              <div className="flex items-center gap-3">
-                <Menu className="w-4 h-4" style={{ color: primaryColor }} />
-                <span>Categorias</span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-neutral-200/70 text-neutral-600">
-                  {activeCategories.length}
-                </span>
-              </div>
-              <ChevronDown
-                className={`w-4 h-4 text-neutral-400 transition-transform duration-200 ${
-                  mobileCategoriasOpen ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {mobileCategoriasOpen && (
-              <div className="bg-white border-t border-neutral-200/80 divide-y divide-neutral-100 max-h-60 overflow-y-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleNav('blog');
-                    setMobileMenuOpen(false);
-                    window.dispatchEvent(
-                      new CustomEvent('blog-category-selected', { detail: { category: 'Todos' } })
-                    );
-                    const el = document.getElementById('articles-section');
-                    if (el) el.scrollIntoView({ behavior: 'smooth' });
-                  }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold text-neutral-800 hover:bg-neutral-50 text-left"
-                >
-                  <span className="text-sm">📑</span>
-                  <span>Todas as Categorias</span>
-                </button>
-                {activeCategories.map((cat) => (
-                  <button
-                    key={cat.id || cat.slug || cat.name}
-                    type="button"
-                    onClick={() => {
-                      handleNav('blog');
-                      setMobileMenuOpen(false);
-                      window.dispatchEvent(
-                        new CustomEvent('blog-category-selected', {
-                          detail: { category: cat.name, slug: cat.slug }
-                        })
-                      );
-                      const el = document.getElementById('articles-section');
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                    className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-bold text-neutral-700 hover:bg-neutral-50 text-left"
-                  >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <span className="text-sm">{cat.icon || '📑'}</span>
-                      <span className="truncate">{cat.name}</span>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
           {showStore && (
             <button

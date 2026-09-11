@@ -8,6 +8,6 @@
 
 $dbHost = 'localhost';
 $dbPort = '3306';
-$dbName = 'u566136191_meudocelar';
-$dbUser = 'u566136191_meudocelar';
-$dbPass = 'Second*-2112';
+$dbName = 'u566136191_achadinhos';
+$dbUser = 'u566136191_achadinhos';
+$dbPass = 'Second*-2026';
