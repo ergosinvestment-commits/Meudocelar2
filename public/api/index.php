@@ -138,6 +138,7 @@ function ensureBlogTablesExist($pdo, $forceSeed = false) {
             `description` text DEFAULT NULL,
             `icon` varchar(64) DEFAULT 'Sparkles',
             `active` tinyint(1) DEFAULT 1,
+            `mostrarNoMenu` tinyint(1) DEFAULT 1,
             `ordem` int(11) DEFAULT 1,
             `createdAt` datetime DEFAULT CURRENT_TIMESTAMP,
             `updatedAt` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -145,6 +146,10 @@ function ensureBlogTablesExist($pdo, $forceSeed = false) {
             KEY `idx_bcat_store` (`storeId`),
             KEY `idx_bcat_slug` (`slug`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        $blogCategoryColumns = $pdo->query("SHOW COLUMNS FROM `blog_categories`")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('mostrarNoMenu', $blogCategoryColumns, true)) {
+            $pdo->exec("ALTER TABLE `blog_categories` ADD COLUMN `mostrarNoMenu` tinyint(1) DEFAULT 1");
+        }
 
         // 2. blog_editors
         $pdo->exec("CREATE TABLE IF NOT EXISTS `blog_editors` (
@@ -185,6 +190,7 @@ function ensureBlogTablesExist($pdo, $forceSeed = false) {
             `published` tinyint(1) DEFAULT 1,
             `views` int(11) DEFAULT 0,
             `linkedProductIds` text DEFAULT NULL,
+            `sidebarBanner` longtext DEFAULT NULL,
             `publishedAt` datetime DEFAULT NULL,
             `createdAt` datetime DEFAULT CURRENT_TIMESTAMP,
             `updatedAt` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -193,6 +199,10 @@ function ensureBlogTablesExist($pdo, $forceSeed = false) {
             KEY `idx_post_slug` (`slug`),
             KEY `idx_post_category` (`category`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        $blogPostColumns = $pdo->query("SHOW COLUMNS FROM `blog_posts`")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('sidebarBanner', $blogPostColumns, true)) {
+            $pdo->exec("ALTER TABLE `blog_posts` ADD COLUMN `sidebarBanner` longtext DEFAULT NULL");
+        }
 
         // 4. blog_settings
         $pdo->exec("CREATE TABLE IF NOT EXISTS `blog_settings` (
@@ -313,6 +323,15 @@ function formatPostOutput($post) {
             $linkedProductIds = is_array($dec) ? $dec : array_filter(array_map('trim', explode(',', $post['linkedProductIds'])));
         }
     }
+    $sidebarBanner = null;
+    if (!empty($post['sidebarBanner'])) {
+        if (is_array($post['sidebarBanner'])) {
+            $sidebarBanner = $post['sidebarBanner'];
+        } elseif (is_string($post['sidebarBanner'])) {
+            $decodedBanner = json_decode($post['sidebarBanner'], true);
+            $sidebarBanner = is_array($decodedBanner) ? $decodedBanner : null;
+        }
+    }
 
     $published = isset($post['published']) ? (bool)$post['published'] : true;
     $destaque = !empty($post['destaque']);
@@ -340,6 +359,7 @@ function formatPostOutput($post) {
         'published' => $published,
         'views' => $views,
         'linkedProductIds' => array_values($linkedProductIds),
+        'sidebarBanner' => $sidebarBanner,
         'publishedAt' => $post['publishedAt'] ?? $post['createdAt'] ?? date('c'),
         'createdAt' => $post['createdAt'] ?? date('c'),
         'updatedAt' => $post['updatedAt'] ?? date('c'),
@@ -348,6 +368,12 @@ function formatPostOutput($post) {
 
 function formatBlogCategoryOutput($cat) {
     if (!$cat) return null;
+    $mostrarNoMenu = true;
+    if (array_key_exists('mostrarNoMenu', $cat) && $cat['mostrarNoMenu'] !== null) {
+        $mostrarNoMenu = !in_array($cat['mostrarNoMenu'], [false, 0, '0', 'false'], true);
+    } elseif (array_key_exists('exibirNoMenu', $cat) && $cat['exibirNoMenu'] !== null) {
+        $mostrarNoMenu = !in_array($cat['exibirNoMenu'], [false, 0, '0', 'false'], true);
+    }
     return [
         'id' => (string)($cat['id'] ?? ''),
         'storeId' => (string)($cat['storeId'] ?? 'store-1'),
@@ -356,6 +382,7 @@ function formatBlogCategoryOutput($cat) {
         'description' => (string)($cat['description'] ?? ''),
         'icon' => (string)($cat['icon'] ?? 'Sparkles'),
         'active' => isset($cat['active']) ? (bool)$cat['active'] : true,
+        'mostrarNoMenu' => $mostrarNoMenu,
         'order' => isset($cat['ordem']) ? (int)$cat['ordem'] : (isset($cat['order']) ? (int)$cat['order'] : 1),
         'ordem' => isset($cat['ordem']) ? (int)$cat['ordem'] : 1,
         'createdAt' => $cat['createdAt'] ?? date('c'),
@@ -1707,8 +1734,11 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/blog-categories$#', $path, $m) &
     $active = isset($body['active']) ? ($body['active'] ? 1 : 0) : 1;
     $ordem = isset($body['order']) ? (int)$body['order'] : (isset($body['ordem']) ? (int)$body['ordem'] : 1);
 
-    $stmt = $pdo->prepare("INSERT INTO blog_categories (id, storeId, name, slug, description, icon, active, ordem) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->execute([$id, $storeId, $name, $catSlug, $description, $icon, $active, $ordem]);
+    $mostrarNoMenu = array_key_exists('mostrarNoMenu', $body)
+        ? (!in_array($body['mostrarNoMenu'], [false, 0, '0', 'false'], true) ? 1 : 0)
+        : 1;
+    $stmt = $pdo->prepare("INSERT INTO blog_categories (id, storeId, name, slug, description, icon, active, mostrarNoMenu, ordem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$id, $storeId, $name, $catSlug, $description, $icon, $active, $mostrarNoMenu, $ordem]);
 
     $stmtGet = $pdo->prepare("SELECT * FROM blog_categories WHERE id = ?");
     $stmtGet->execute([$id]);
@@ -1732,13 +1762,15 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/blog-categories/([a-zA-Z0-9_-]+)
     if ($method === 'PUT' || $method === 'PATCH') {
         $fields = [];
         $params = [];
-        $allowed = ['name', 'slug', 'description', 'icon', 'active', 'ordem'];
+        $allowed = ['name', 'slug', 'description', 'icon', 'active', 'mostrarNoMenu', 'ordem'];
 
         foreach ($allowed as $f) {
             if (array_key_exists($f, $body)) {
                 $fields[] = "`$f` = ?";
                 $val = $body[$f];
-                if ($f === 'active') $val = $val ? 1 : 0;
+                if ($f === 'active' || $f === 'mostrarNoMenu') {
+                    $val = !in_array($val, [false, 0, '0', 'false'], true) ? 1 : 0;
+                }
                 if ($f === 'ordem') $val = (int)$val;
                 $params[] = $val;
             }
@@ -2096,17 +2128,20 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/posts$#', $path, $m) && $method 
         $prodIds = array_values(array_filter(array_map('trim', $body['linkedProductIds'])));
     }
     $prodIdsJson = json_encode($prodIds, JSON_UNESCAPED_UNICODE);
+    $sidebarBannerJson = array_key_exists('sidebarBanner', $body)
+        ? json_encode($body['sidebarBanner'], JSON_UNESCAPED_UNICODE)
+        : null;
 
     $stmt = $pdo->prepare("INSERT INTO blog_posts (
         id, storeId, slug, title, excerpt, content, coverImage, category, tags,
         authorId, author, authorAvatar, authorRole, authorBio, readTime,
-        destaque, status, published, views, linkedProductIds, publishedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        destaque, status, published, views, linkedProductIds, sidebarBanner, publishedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
     $stmt->execute([
         $id, $storeId, $postSlug, $title, $excerpt, $content, $coverImage, $category, $tagsJson,
         $authorId, $author, $authorAvatar, $authorRole, $authorBio, $readTime,
-        $destaque, $status, $published, $views, $prodIdsJson, $publishedAt
+        $destaque, $status, $published, $views, $prodIdsJson, $sidebarBannerJson, $publishedAt
     ]);
 
     $stmtGet = $pdo->prepare("SELECT * FROM blog_posts WHERE id = ?");
@@ -2157,6 +2192,11 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/posts/([a-zA-Z0-9_-]+)$#', $path
             $pIds = is_array($body['linkedProductIds']) ? array_values(array_filter(array_map('trim', $body['linkedProductIds']))) : [];
             $fields[] = "`linkedProductIds` = ?";
             $params[] = json_encode($pIds, JSON_UNESCAPED_UNICODE);
+        }
+
+        if (array_key_exists('sidebarBanner', $body)) {
+            $fields[] = "`sidebarBanner` = ?";
+            $params[] = json_encode($body['sidebarBanner'], JSON_UNESCAPED_UNICODE);
         }
 
         if (!empty($fields)) {

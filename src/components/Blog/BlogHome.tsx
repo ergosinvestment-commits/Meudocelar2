@@ -382,12 +382,9 @@ export default function BlogHome({
             </button>
 
             {/* Top Bar Categories (mostrarNoMenu !== false) */}
-            {blogCategories
-              .filter(c => {
-                const isActive = c.active !== false && (c as any).ativo !== false && (c as any).active !== 0 && (c as any).active !== 'false';
-                const inMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false';
-                return isActive && inMenu;
-              })
+            {topMenuCatNames
+              .map((categoryName) => blogCategories.find(cat => cat.name === categoryName))
+              .filter((cat): cat is BlogCategory => Boolean(cat))
               .map((cat) => (
                 <button
                   key={cat.id || cat.name}

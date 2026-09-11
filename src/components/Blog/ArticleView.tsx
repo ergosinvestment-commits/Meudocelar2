@@ -939,11 +939,7 @@ export default function ArticleView({
               // Exibe ESTRITAMENTE se este artigo específico tiver um banner configurado e ativo
               const currentLivePost = allPosts.find(p => p.id === post.id || p.slug === post.slug) || post;
               const rawBanner = currentLivePost.sidebarBanner?.imageUrl ? currentLivePost.sidebarBanner : (post.sidebarBanner?.imageUrl ? post.sidebarBanner : null);
-              const banner = (rawBanner && rawBanner.imageUrl && rawBanner.enabled !== false)
-                ? rawBanner
-                : (blogSettings?.articleSidebarBanner?.enabled !== false && blogSettings?.articleSidebarBanner?.imageUrl
-                    ? blogSettings.articleSidebarBanner
-                    : null);
+              const banner = rawBanner && rawBanner.enabled !== false ? rawBanner : null;
 
               if (!banner?.imageUrl) return null;
 
