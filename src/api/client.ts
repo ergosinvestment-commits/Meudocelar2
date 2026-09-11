@@ -96,9 +96,20 @@ async function cachedFetch<T>(
   cacheKey: string,
   fetchFn: () => Promise<T>,
   ttl: number = CACHE_TTL,
-  allowStale: boolean = true
+  allowStale: boolean = true,
+  forceRefresh: boolean = false
 ): Promise<T> {
   const now = Date.now();
+
+  if (forceRefresh) {
+    const data = await fetchFn();
+    const expiry = Date.now() + ttl;
+    apiCache.set(cacheKey, { data, expiry });
+    try {
+      sessionStorage.setItem(`apicache_${cacheKey}`, JSON.stringify({ data, expiry }));
+    } catch {}
+    return data;
+  }
 
   // 1. Check in-memory cache
   if (apiCache.has(cacheKey)) {
@@ -190,15 +201,16 @@ export async function fetchStoreConfig(slug: string = 'achadinhos-da-maria'): Pr
 
 export async function fetchStoreProducts(slug: string = 'achadinhos-da-maria'): Promise<Product[]> {
   return cachedFetch(`store_products_${slug}`, async () => {
-    try {
-      const res = await fetch(`${API_BASE}/store/${slug}/products`);
-      if (!res.ok) return [];
-      const prods = await res.json();
-      return Array.isArray(prods) ? prods : [];
-    } catch (err) {
-      return [];
+    const res = await fetch(`${API_BASE}/store/${slug}/products`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Falha ao carregar produtos (${res.status})`);
     }
-  });
+    const prods = await res.json();
+    if (!Array.isArray(prods)) {
+      throw new Error('A API de produtos retornou um formato inválido');
+    }
+    return prods;
+  }, CACHE_TTL, false, true);
 }
 
 export async function fetchStoreCategories(slug: string = 'achadinhos-da-maria', onlyMenu?: boolean): Promise<Category[]> {
@@ -720,15 +732,16 @@ export async function fetchPriceLogs(slug: string = 'achadinhos-da-maria', limit
 
 export async function fetchPublicBlogPosts(slug: string = 'achadinhos-da-maria'): Promise<BlogPost[]> {
   return cachedFetch(`public_blog_posts_${slug}`, async () => {
-    try {
-      const res = await fetch(`${API_BASE}/store/${slug}/posts`);
-      if (!res.ok) return FALLBACK_BLOG_POSTS;
-      const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_POSTS;
-    } catch (err) {
-      return FALLBACK_BLOG_POSTS;
+    const res = await fetch(`${API_BASE}/store/${slug}/posts`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Falha ao carregar artigos (${res.status})`);
     }
-  });
+    const data = await res.json();
+    if (!Array.isArray(data)) {
+      throw new Error('A API de artigos retornou um formato inválido');
+    }
+    return data;
+  }, CACHE_TTL, false, true);
 }
 
 export async function fetchBlogPostBySlug(slug: string = 'achadinhos-da-maria', postSlug: string): Promise<BlogPost | null> {
@@ -849,15 +862,16 @@ export async function deleteAdminMessage(slug: string = 'achadinhos-da-maria', i
 
 export async function fetchPublicBlogSettings(slug: string = 'achadinhos-da-maria'): Promise<BlogSettings> {
   return cachedFetch(`public_blog_settings_${slug}`, async () => {
-    try {
-      const res = await fetch(`${API_BASE}/store/${slug}/blog-settings`);
-      if (!res.ok) return FALLBACK_BLOG_SETTINGS;
-      const data = await res.json();
-      return data || FALLBACK_BLOG_SETTINGS;
-    } catch {
-      return FALLBACK_BLOG_SETTINGS;
+    const res = await fetch(`${API_BASE}/store/${slug}/blog-settings`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Falha ao carregar configurações do Blog (${res.status})`);
     }
-  });
+    const data = await res.json();
+    if (!data || typeof data !== 'object') {
+      throw new Error('A API de configurações do Blog retornou um formato inválido');
+    }
+    return data;
+  }, CACHE_TTL, false, true);
 }
 
 export async function fetchAdminBlogSettings(slug: string = 'achadinhos-da-maria'): Promise<BlogSettings> {
@@ -889,15 +903,16 @@ export async function saveAdminBlogSettings(slug: string = 'achadinhos-da-maria'
 
 export async function fetchPublicBlogCategories(slug: string = 'achadinhos-da-maria'): Promise<BlogCategory[]> {
   return cachedFetch(`public_blog_categories_${slug}`, async () => {
-    try {
-      const res = await fetch(`${API_BASE}/store/${slug}/blog-categories`);
-      if (!res.ok) return FALLBACK_BLOG_CATEGORIES;
-      const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : FALLBACK_BLOG_CATEGORIES;
-    } catch {
-      return FALLBACK_BLOG_CATEGORIES;
+    const res = await fetch(`${API_BASE}/store/${slug}/blog-categories`, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Falha ao carregar categorias do Blog (${res.status})`);
     }
-  });
+    const data = await res.json();
+    if (!Array.isArray(data)) {
+      throw new Error('A API de categorias do Blog retornou um formato inválido');
+    }
+    return data;
+  }, CACHE_TTL, false, true);
 }
 
 export async function fetchAdminBlogCategories(slug: string = 'achadinhos-da-maria'): Promise<BlogCategory[]> {
@@ -1080,8 +1095,6 @@ export async function ensureInstitutionalTableInMySql(slug: string = 'achadinhos
   });
   return await res.json();
 }
-
-
 
 
 

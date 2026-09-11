@@ -128,7 +128,7 @@ async function startServer() {
 
   // Get Store Configuration
   app.get('/api/store/:slug', (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     let store = db.getStoreBySlug(slug);
     if (!store) {
@@ -144,7 +144,7 @@ async function startServer() {
 
   // Get Store Products (Public - only active & non-expired)
   app.get('/api/store/:slug/products', (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     let products = db.getProducts(slug, true);
     if (!products || products.length === 0) {
@@ -155,7 +155,7 @@ async function startServer() {
 
   // Get Store Categories (Public)
   app.get('/api/store/:slug/categories', (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const onlyMenu = req.query.menu === 'true';
     const categories = db.getCategories(slug, onlyMenu);
@@ -164,7 +164,7 @@ async function startServer() {
 
   // Get Store Platforms (Public)
   app.get('/api/store/:slug/platforms', (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const platforms = db.getPlatforms(slug, true);
     res.json(platforms);
@@ -191,7 +191,7 @@ async function startServer() {
 
   // Get Published Blog Posts
   app.get('/api/store/:slug/posts', (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const posts = db.getPosts(slug, true);
     res.json(posts);
@@ -199,7 +199,7 @@ async function startServer() {
 
   // Get Single Blog Post by Slug
   app.get('/api/store/:slug/posts/:postSlug', (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const postSlug = req.params.postSlug;
     const post = db.getPostBySlug(slug, postSlug);
@@ -218,7 +218,7 @@ async function startServer() {
 
   // Get Public Blog Settings
   app.get(['/api/store/:slug/blog-settings', '/api/public/store/:slug/blog-settings'], (req, res) => {
-    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     const slug = req.params.slug || 'achadinhos-da-maria';
     const settings = db.getBlogSettings(slug);
     res.json(settings);

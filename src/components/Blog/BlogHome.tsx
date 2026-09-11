@@ -53,7 +53,8 @@ export default function BlogHome({
   const [products, setProducts] = useState<Product[]>(() => cachedProds || []);
   const [blogSettings, setBlogSettings] = useState<BlogSettings | null>(initialBlogSettings || null);
   const [blogCategories, setBlogCategories] = useState<BlogCategory[]>(() => cachedCats || []);
-  const [loading, setLoading] = useState<boolean>(() => !cachedPosts || cachedPosts.length === 0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todos');
   const [categoriasOpen, setCategoriasOpen] = useState(false);
@@ -121,22 +122,22 @@ export default function BlogHome({
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
+      setLoadError(null);
       try {
-        if (!cachedPosts || cachedPosts.length === 0) {
-          setLoading(true);
-        }
         const [postsRes, prodsRes, settingsRes, catsRes] = await Promise.all([
           fetchPublicBlogPosts(storeSlug),
-          fetchStoreProducts(storeSlug).catch(() => []),
-          fetchPublicBlogSettings(storeSlug).catch(() => null),
-          fetchPublicBlogCategories(storeSlug).catch(() => [])
+          fetchStoreProducts(storeSlug),
+          fetchPublicBlogSettings(storeSlug),
+          fetchPublicBlogCategories(storeSlug)
         ]);
-        if (postsRes) setPosts(postsRes);
-        if (prodsRes) setProducts(prodsRes);
-        if (settingsRes) setBlogSettings(settingsRes);
-        if (catsRes) setBlogCategories(catsRes);
+        setPosts(postsRes);
+        setProducts(prodsRes);
+        setBlogSettings(settingsRes);
+        setBlogCategories(catsRes);
       } catch (err) {
         console.error('Error loading blog home data:', err);
+        setLoadError('Não foi possível carregar todos os dados do Blog. Atualize a página para tentar novamente.');
       } finally {
         setLoading(false);
       }
@@ -424,7 +425,7 @@ export default function BlogHome({
         )}
 
         {/* Featured Post Card (Hero Highlight) */}
-        {!searchQuery && activeCategory === 'Todos' && featuredPost && (
+        {!loading && !loadError && !searchQuery && activeCategory === 'Todos' && featuredPost && (
           <div className="mb-12">
             <div
               onClick={() => onSelectPost(featuredPost)}
@@ -525,6 +526,10 @@ export default function BlogHome({
               <div className="py-20 text-center text-neutral-400">
                 <div className="w-8 h-8 border-2 border-neutral-300 border-t-neutral-800 rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-xs font-semibold">Carregando artigos...</p>
+              </div>
+            ) : loadError ? (
+              <div className="py-20 text-center text-red-500">
+               <p className="text-sm font-semibold">{loadError}</p>
               </div>
             ) : regularPosts.length === 0 ? (
               <div className="bg-white rounded-2xl border border-neutral-200 p-10 text-center">
