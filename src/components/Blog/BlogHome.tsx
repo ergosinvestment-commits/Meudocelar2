@@ -186,7 +186,61 @@ export default function BlogHome({
   const heroSubtitle = blogSettings?.heroSubtitle || 'Artigos práticos com testes reais, truques de organização e seleções dos melhores produtos para transformar sua rotina com economia.';
 
   return (
-    <div className="min-h-screen bg-[#FBFBFA] text-[#1B1B1B] font-['DM_Sans',sans-serif]">
+    <div
+      className="min-h-screen bg-[#FBFBFA] text-[#1B1B1B] font-['DM_Sans',sans-serif]"
+      onContextMenu={e => {
+        // Disable right-click except on input/textarea elements
+        if (e.target && (e.target as HTMLElement).tagName && 
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+          return;
+        }
+        e.preventDefault();
+      }}
+      onCopy={e => {
+        // Disable Ctrl+C except on input/textarea elements
+        if (e.target && (e.target as HTMLElement).tagName && 
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+          return;
+        }
+        e.preventDefault();
+      }}
+      onCut={e => {
+        // Disable Ctrl+X except on input/textarea elements
+        if (e.target && (e.target as HTMLElement).tagName && 
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+          return;
+        }
+        e.preventDefault();
+      }}
+      onKeydown={e => {
+        // Block common shortcuts except on input/textarea elements
+        if (e.target && (e.target as HTMLElement).tagName && 
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+          return;
+        }
+        
+        // Block Ctrl+C
+        if (e.ctrlKey && e.key === 'c') {
+          e.preventDefault();
+        }
+        // Block Ctrl+X
+        if (e.ctrlKey && e.key === 'x') {
+          e.preventDefault();
+        }
+        // Block Ctrl+U (view source)
+        if (e.ctrlKey && e.key === 'u') {
+          e.preventDefault();
+        }
+        // Block Ctrl+S (save - mostly prevents accidental saves)
+        if (e.ctrlKey && e.key === 's') {
+          e.preventDefault();
+        }
+        // Block F12 (DevTools)
+        if (e.key === 'F12') {
+          e.preventDefault();
+        }
+      }}
+    >
       {/* Blog Hero Header with optional custom background image */}
       <section className="relative text-white overflow-hidden py-14 md:py-20 px-4 md:px-6 bg-neutral-950">
         {/* Background Image if configured */}
@@ -388,6 +442,7 @@ export default function BlogHome({
                 const inMenu = c.mostrarNoMenu !== false && (c as any).mostrarNoMenu !== 0 && (c as any).mostrarNoMenu !== '0' && (c as any).mostrarNoMenu !== 'false';
                 return isActive && inMenu;
               })
+              .slice(0, 5)
               .map((cat) => (
                 <button
                   key={cat.id || cat.name}

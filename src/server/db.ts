@@ -2985,31 +2985,45 @@ class DatabaseManager {
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.products) && mysqlData.products.length > 0) {
-      this.data.products = mysqlData.products;
+      const existingProdIds = new Set(this.data.products?.map(p => p.id) || []);
+      this.data.products = [...new Map([...this.data.products || [], ...mysqlData.products].entries()).values()]
+        .filter(p => existingProdIds.has(p.id) || mysqlData.products.some(mp => mp.id === p.id));
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.categories) && mysqlData.categories.length > 0) {
-      this.data.categories = mysqlData.categories;
+      const existingCatIds = new Set(this.data.categories?.map(c => c.id) || []);
+      this.data.categories = [...new Map([...this.data.categories || [], ...mysqlData.categories].entries()).values()]
+        .filter(c => existingCatIds.has(c.id) || mysqlData.categories.some(mc => mc.id === c.id));
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.platforms) && mysqlData.platforms.length > 0) {
-      this.data.platforms = mysqlData.platforms;
+      const existingPlatIds = new Set(this.data.platforms?.map(p => p.id) || []);
+      this.data.platforms = [...new Map([...this.data.platforms || [], ...mysqlData.platforms].entries()).values()]
+        .filter(p => existingPlatIds.has(p.id) || mysqlData.platforms.some(mp => mp.id === p.id));
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.users) && mysqlData.users.length > 0) {
-      this.data.users = mysqlData.users;
+      const existingUserIds = new Set(this.data.users?.map(u => u.id) || []);
+      this.data.users = [...new Map([...this.data.users || [], ...mysqlData.users].entries()).values()]
+        .filter(u => existingUserIds.has(u.id) || mysqlData.users.some(mu => mu.id === u.id));
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.posts) && mysqlData.posts.length > 0) {
-      this.data.posts = mysqlData.posts;
+      const existingPostIds = new Set(this.data.posts?.map(p => p.id) || []);
+      this.data.posts = [...new Map([...this.data.posts || [], ...mysqlData.posts].entries()).values()]
+        .filter(p => existingPostIds.has(p.id) || mysqlData.posts.some(mp => mp.id === p.id));
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.blogCategories) && mysqlData.blogCategories.length > 0) {
-      this.data.blogCategories = mysqlData.blogCategories;
+      const existingBlogCatIds = new Set(this.data.blogCategories?.map(c => c.id) || []);
+      this.data.blogCategories = [...new Map([...this.data.blogCategories || [], ...mysqlData.blogCategories].entries()).values()]
+        .filter(c => existingBlogCatIds.has(c.id) || mysqlData.blogCategories.some(mc => mc.id === c.id));
       hasChanges = true;
     }
     if (Array.isArray(mysqlData.blogEditors) && mysqlData.blogEditors.length > 0) {
-      this.data.blogEditors = mysqlData.blogEditors;
+      const existingBlogEditorIds = new Set(this.data.blogEditors?.map(e => e.id) || []);
+      this.data.blogEditors = [...new Map([...this.data.blogEditors || [], ...mysqlData.blogEditors].entries()).values()]
+        .filter(e => existingBlogEditorIds.has(e.id) || mysqlData.blogEditors.some(me => me.id === e.id));
       hasChanges = true;
     }
     if (mysqlData.blogSettings && Object.keys(mysqlData.blogSettings).length > 0) {

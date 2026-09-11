@@ -32,12 +32,14 @@ async function startServer() {
         if (mysqlData && Array.isArray(mysqlData.products) && mysqlData.products.length > 0) {
           db.hydrateFromMySql(mysqlData);
           console.log(`[Hostinger MySQL] Carregados com sucesso ${mysqlData.products.length} produto(s) e ${mysqlData.stores?.length || 1} loja(s) do MySQL.`);
-        } else {
+        } else if (mysqlData && Array.isArray(mysqlData.products) && mysqlData.products.length === 0) {
           // MySQL is connected but has empty tables (fresh database setup on Hostinger)
-          console.log('[Hostinger MySQL] Banco MySQL recém-conectado está vazio. Populando tabelas automaticamente com o catálogo local...');
-          const allLocalData: any = db.getAllData();
-          await mysqlManager.syncAllData(allLocalData);
-          console.log('[Hostinger MySQL] Catálogo, categorias, banners e blog gravados com sucesso no MySQL da Hostinger!');
+          // Do NOT auto-sync local data to avoid overwriting correct data with defaults
+          // Only sync if explicitly requested via API. Keep local data as-is.
+          console.log('[Hostinger MySQL] Banco MySQL conectado, mas tabelas vazias. Dados locais preservados. Use /api/admin/database/sync-all para popular manualmente.');
+        } else {
+          // MySQL connection failed or returned unexpected data
+          console.warn('[Hostinger MySQL] Dados inesperados do MySQL, usando armazenamento local.');
         }
       } catch (e: any) {
         console.warn('[Hostinger MySQL] Falha ao sincronizar estado inicial:', e?.message || e);
@@ -74,6 +76,9 @@ async function startServer() {
 
   // Global API Rate Limiter
   app.use('/api/', apiRateLimiter);
+
+// Admin rate limiter (more restrictive)
+  app.use('/api/admin/', adminRateLimiter);
 
   // Upload image from computer endpoint (converts and compresses automatically to WebP)
   app.post('/api/admin/upload-image', async (req, res) => {
@@ -314,19 +319,19 @@ async function startServer() {
   // ============================================
 
   // List all stores
-  app.get('/api/admin/stores', (req, res) => {
+  app.get('/api/admin/stores', requireAdminAuth, (req, res) => {
     const stores = db.getStores();
     res.json(stores);
   });
 
   // Create store
-  app.post('/api/admin/stores', (req, res) => {
+  app.post('/api/admin/stores', requireAdminAuth, (req, res) => {
     const newStore = db.createStore(req.body);
     res.status(201).json(newStore);
   });
 
   // Get store details for admin
-  app.get('/api/admin/store/:slug', (req, res) => {
+  app.get('/api/admin/store/:slug', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const store = db.getStoreBySlug(slug);
     if (!store) {
@@ -336,7 +341,7 @@ async function startServer() {
   });
 
   // Update store details and appearance
-  app.put('/api/admin/store/:slug', async (req, res) => {
+  app.put('/api/admin/store/:slug', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug;
     const updated = db.updateStore(slug, req.body);
     if (!updated) {
@@ -350,14 +355,14 @@ async function startServer() {
   });
 
   // Get all products (including inactive) for admin table
-  app.get('/api/admin/store/:slug/products', (req, res) => {
+  app.get('/api/admin/store/:slug/products', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const products = db.getProducts(slug, false);
     res.json(products);
   });
 
   // Create new product
-  app.post('/api/admin/store/:slug/products', async (req, res) => {
+  app.post('/api/admin/store/:slug/products', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const created = db.createProduct(slug, req.body);
     if (mysqlManager.isLive()) {
@@ -367,7 +372,7 @@ async function startServer() {
   });
 
   // Full update of product
-  app.put('/api/admin/store/:slug/products/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/products/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const updated = db.updateProduct(id, req.body);
     if (!updated) {
@@ -380,7 +385,7 @@ async function startServer() {
   });
 
   // Quick inline update of single fields (e.g. price, promo, active, star, order)
-  app.patch('/api/admin/store/:slug/products/:id', async (req, res) => {
+  app.patch('/api/admin/store/:slug/products/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const updated = db.updateProduct(id, req.body);
     if (!updated) {
@@ -393,7 +398,7 @@ async function startServer() {
   });
 
   // Delete product
-  app.delete('/api/admin/store/:slug/products/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/products/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const success = db.deleteProduct(id);
     if (!success) {
@@ -410,14 +415,14 @@ async function startServer() {
   // ============================================
 
   // Get all categories
-  app.get('/api/admin/store/:slug/categories', (req, res) => {
+  app.get('/api/admin/store/:slug/categories', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const categories = db.getCategories(slug, false);
     res.json(categories);
   });
 
   // Create new category
-  app.post('/api/admin/store/:slug/categories', async (req, res) => {
+  app.post('/api/admin/store/:slug/categories', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const created = db.createCategory(slug, req.body);
     if (mysqlManager.isLive()) {
@@ -427,7 +432,7 @@ async function startServer() {
   });
 
   // Update category
-  app.put('/api/admin/store/:slug/categories/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/categories/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const updated = db.updateCategory(id, req.body);
     if (!updated) {
@@ -440,7 +445,7 @@ async function startServer() {
   });
 
   // Patch category
-  app.patch('/api/admin/store/:slug/categories/:id', async (req, res) => {
+  app.patch('/api/admin/store/:slug/categories/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const updated = db.updateCategory(id, req.body);
     if (!updated) {
@@ -453,7 +458,7 @@ async function startServer() {
   });
 
   // Delete category
-  app.delete('/api/admin/store/:slug/categories/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/categories/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const success = db.deleteCategory(id);
     if (!success) {
@@ -470,14 +475,14 @@ async function startServer() {
   // ============================================
 
   // Get all platforms
-  app.get('/api/admin/store/:slug/platforms', (req, res) => {
+  app.get('/api/admin/store/:slug/platforms', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const platforms = db.getPlatforms(slug, false);
     res.json(platforms);
   });
 
   // Create new platform
-  app.post('/api/admin/store/:slug/platforms', async (req, res) => {
+  app.post('/api/admin/store/:slug/platforms', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const created = db.createPlatform(slug, req.body);
     if (mysqlManager.isLive()) {
@@ -487,7 +492,7 @@ async function startServer() {
   });
 
   // Update platform
-  app.put('/api/admin/store/:slug/platforms/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/platforms/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const updated = db.updatePlatform(id, req.body);
     if (!updated) {
@@ -500,7 +505,7 @@ async function startServer() {
   });
 
   // Patch platform
-  app.patch('/api/admin/store/:slug/platforms/:id', async (req, res) => {
+  app.patch('/api/admin/store/:slug/platforms/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const updated = db.updatePlatform(id, req.body);
     if (!updated) {
@@ -513,7 +518,7 @@ async function startServer() {
   });
 
   // Delete platform
-  app.delete('/api/admin/store/:slug/platforms/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/platforms/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const success = db.deletePlatform(id);
     if (!success) {
@@ -530,14 +535,14 @@ async function startServer() {
   // ============================================
 
   // Get all users of a store
-  app.get('/api/admin/store/:slug/users', (req, res) => {
+  app.get('/api/admin/store/:slug/users', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const users = db.getUsers(slug);
     res.json(users);
   });
 
   // Create new user
-  app.post('/api/admin/store/:slug/users', async (req, res) => {
+  app.post('/api/admin/store/:slug/users', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const result = db.createUser(slug, req.body);
     if (!result.success) {
@@ -547,7 +552,7 @@ async function startServer() {
   });
 
   // Update user
-  app.put('/api/admin/store/:slug/users/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/users/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const result = db.updateUser(id, req.body);
     if (!result.success) {
@@ -557,7 +562,7 @@ async function startServer() {
   });
 
   // Patch user
-  app.patch('/api/admin/store/:slug/users/:id', async (req, res) => {
+  app.patch('/api/admin/store/:slug/users/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const result = db.updateUser(id, req.body);
     if (!result.success) {
@@ -567,7 +572,7 @@ async function startServer() {
   });
 
   // Dedicated user password change
-  app.post('/api/admin/store/:slug/users/:id/password', async (req, res) => {
+  app.post('/api/admin/store/:slug/users/:id/password', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const { password, newPassword, senha } = req.body || {};
     const passToSet = password || newPassword || senha;
@@ -582,7 +587,7 @@ async function startServer() {
   });
 
   // Delete user
-  app.delete('/api/admin/store/:slug/users/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/users/:id', requireAdminAuth, async (req, res) => {
     const id = req.params.id;
     const result = db.deleteUser(id);
     if (!result.success) {
@@ -596,14 +601,14 @@ async function startServer() {
   // ============================================
 
   // Get all posts for admin (including drafts)
-  app.get('/api/admin/store/:slug/posts', (req, res) => {
+  app.get('/api/admin/store/:slug/posts', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const posts = db.getPosts(slug, false);
     res.json(posts);
   });
 
   // Create or update post
-  app.post('/api/admin/store/:slug/posts', async (req, res) => {
+  app.post('/api/admin/store/:slug/posts', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const post = db.savePost(slug, req.body);
     if (mysqlManager.isLive()) {
@@ -612,7 +617,7 @@ async function startServer() {
     res.status(201).json(post);
   });
 
-  app.put('/api/admin/store/:slug/posts/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/posts/:id', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const post = db.savePost(slug, { ...req.body, id: req.params.id });
     if (mysqlManager.isLive()) {
@@ -621,7 +626,7 @@ async function startServer() {
     res.json(post);
   });
 
-  app.delete('/api/admin/store/:slug/posts/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/posts/:id', requireAdminAuth, async (req, res) => {
     const success = db.deletePost(req.params.id);
     if (!success) {
       return res.status(404).json({ error: 'Artigo não encontrado' });
@@ -633,14 +638,14 @@ async function startServer() {
   });
 
   // Get contact messages for admin
-  app.get('/api/admin/store/:slug/messages', (req, res) => {
+  app.get('/api/admin/store/:slug/messages', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const messages = db.getMessages(slug);
     res.json(messages);
   });
 
   // Delete message
-  app.delete('/api/admin/store/:slug/messages/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/messages/:id', requireAdminAuth, async (req, res) => {
     const success = db.deleteMessage(req.params.id);
     if (!success) {
       return res.status(404).json({ error: 'Mensagem não encontrada' });
@@ -673,14 +678,14 @@ async function startServer() {
   });
 
   // Get institutional data (admin)
-  app.get('/api/admin/store/:slug/institutional', (req, res) => {
+  app.get('/api/admin/store/:slug/institutional', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const data = db.getInstitutional(slug);
     res.json(data);
   });
 
   // Update institutional data (admin - persists directly to MySQL institutional_pages, stores, and blog_settings)
-  app.put('/api/admin/store/:slug/institutional', async (req, res) => {
+  app.put('/api/admin/store/:slug/institutional', requireAdminAuth, async (req, res) => {
     try {
       const slug = req.params.slug || 'achadinhos-da-maria';
       const updated = db.updateInstitutional(slug, req.body);
@@ -713,14 +718,14 @@ async function startServer() {
   });
 
   // Get all blog categories (admin)
-  app.get('/api/admin/store/:slug/blog-categories', (req, res) => {
+  app.get('/api/admin/store/:slug/blog-categories', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const categories = db.getBlogCategories(slug, false);
     res.json(categories);
   });
 
   // Create blog category
-  app.post('/api/admin/store/:slug/blog-categories', async (req, res) => {
+  app.post('/api/admin/store/:slug/blog-categories', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const newCat = db.createBlogCategory(slug, req.body);
     if (mysqlManager.isLive()) {
@@ -730,7 +735,7 @@ async function startServer() {
   });
 
   // Update blog category
-  app.put('/api/admin/store/:slug/blog-categories/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/blog-categories/:id', requireAdminAuth, async (req, res) => {
     const updated = db.updateBlogCategory(req.params.id, req.body);
     if (!updated) {
       return res.status(404).json({ error: 'Categoria não encontrada' });
@@ -742,7 +747,7 @@ async function startServer() {
   });
 
   // Delete blog category
-  app.delete('/api/admin/store/:slug/blog-categories/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/blog-categories/:id', requireAdminAuth, async (req, res) => {
     const success = db.deleteBlogCategory(req.params.id);
     if (!success) {
       return res.status(404).json({ error: 'Categoria não encontrada' });
@@ -754,14 +759,14 @@ async function startServer() {
   });
 
   // Get all blog editors (admin)
-  app.get('/api/admin/store/:slug/blog-editors', (req, res) => {
+  app.get('/api/admin/store/:slug/blog-editors', requireAdminAuth, (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const editors = db.getBlogEditors(slug, false);
     res.json(editors);
   });
 
   // Create blog editor
-  app.post('/api/admin/store/:slug/blog-editors', async (req, res) => {
+  app.post('/api/admin/store/:slug/blog-editors', requireAdminAuth, async (req, res) => {
     const slug = req.params.slug || 'achadinhos-da-maria';
     const newEditor = db.createBlogEditor(slug, req.body);
     if (mysqlManager.isLive()) {
@@ -771,7 +776,7 @@ async function startServer() {
   });
 
   // Update blog editor
-  app.put('/api/admin/store/:slug/blog-editors/:id', async (req, res) => {
+  app.put('/api/admin/store/:slug/blog-editors/:id', requireAdminAuth, async (req, res) => {
     const updated = db.updateBlogEditor(req.params.id, req.body);
     if (!updated) {
       return res.status(404).json({ error: 'Editor não encontrado' });
@@ -783,7 +788,7 @@ async function startServer() {
   });
 
   // Delete blog editor
-  app.delete('/api/admin/store/:slug/blog-editors/:id', async (req, res) => {
+  app.delete('/api/admin/store/:slug/blog-editors/:id', requireAdminAuth, async (req, res) => {
     const success = db.deleteBlogEditor(req.params.id);
     if (!success) {
       return res.status(404).json({ error: 'Editor não encontrado' });
@@ -802,6 +807,11 @@ async function startServer() {
   app.post('/api/admin/auth/login', loginRateLimiter, (req, res) => {
     const { slug = 'achadinhos-da-maria', login, password } = req.body || {};
     const result = db.verifyAdminAuth(slug, login, password);
+    
+    // Log authentication attempt
+    const clientIp = (req as any).ip || 'unknown';
+    logSecurityEvent('login_attempt', `Login attempt for slug: ${slug}, user: ${login}, success: ${result.success}`, clientIp);
+    
     if (!result.success) {
       return res.status(401).json({ success: false, error: result.message || 'Credenciais inválidas' });
     }
