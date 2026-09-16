@@ -68,6 +68,7 @@ async function startServer() {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
   app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '30d' }));
+  app.use('/files/uploads', express.static(UPLOADS_DIR, { maxAge: '30d' }));
 
   // Middleware for large payload (e.g., high-resolution image uploads)
   app.use(express.json({ limit: '100mb' }));

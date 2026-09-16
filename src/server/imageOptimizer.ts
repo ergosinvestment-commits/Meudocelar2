@@ -185,13 +185,14 @@ export function optimizeImageUrl(url: string | undefined): string {
  */
 export async function saveOptimizedUpload(
   source: Buffer | string,
-  uploadsDir: string = UPLOADS_DIR,
+  uploadsDir?: string,
   options: OptimizeOptions = {}
 ): Promise<{ publicUrl: string; originalSize: number; newSize: number }> {
-  const targetDir = uploadsDir || UPLOADS_DIR;
+  // Define destination dinamicamente na Hostinger (/home/u566136191/files/uploads)
+  const destination = uploadsDir || getUploadsDir();
 
-  if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
+  if (!fs.existsSync(destination)) {
+    fs.mkdirSync(destination, { recursive: true });
   }
 
   let inputBuffer: Buffer;
@@ -200,24 +201,27 @@ export async function saveOptimizedUpload(
     if (match && match[1]) {
       inputBuffer = Buffer.from(match[1], 'base64');
     } else {
-      inputBuffer = Buffer.from(source, 'base64');
+      inputBuffer = Buffer.from(source.replace(/^data:image\/\w+;base64,/, ''), 'base64');
     }
   } else {
     inputBuffer = source;
   }
 
   const { buffer, extension, originalSize, newSize } = await optimizeBuffer(inputBuffer, {
-    format: 'webp',
-    quality: 82,
+    format: options.format || 'webp',
+    quality: options.quality || 82,
     ...options
   });
 
-  const filename = `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
-  const filePath = path.join(targetDir, filename);
-  fs.writeFileSync(filePath, buffer);
+  const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${extension}`;
+  const filePath = path.join(destination, fileName);
+  await fs.promises.writeFile(filePath, buffer);
+
+  const isHostinger = fs.existsSync('/home/u566136191') || destination.includes('files/uploads');
+  const publicUrl = isHostinger ? `/files/uploads/${fileName}` : `/uploads/${fileName}`;
 
   return {
-    publicUrl: `/uploads/${filename}`,
+    publicUrl,
     originalSize,
     newSize
   };
