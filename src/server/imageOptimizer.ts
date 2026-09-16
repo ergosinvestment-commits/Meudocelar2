@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
+// Diretório de uploads (Lê a variável de ambiente UPLOADS_DIR da Hostinger ou usa pasta local em dev)
+export const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
+
 export interface OptimizeOptions {
   maxWidth?: number;
   maxHeight?: number;
@@ -173,11 +176,13 @@ export function optimizeImageUrl(url: string | undefined): string {
  */
 export async function saveOptimizedUpload(
   source: Buffer | string,
-  uploadsDir: string,
+  uploadsDir: string = UPLOADS_DIR,
   options: OptimizeOptions = {}
 ): Promise<{ publicUrl: string; originalSize: number; newSize: number }> {
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  const targetDir = uploadsDir || UPLOADS_DIR;
+
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
   }
 
   let inputBuffer: Buffer;
@@ -199,7 +204,7 @@ export async function saveOptimizedUpload(
   });
 
   const filename = `img_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
-  const filePath = path.join(uploadsDir, filename);
+  const filePath = path.join(targetDir, filename);
   fs.writeFileSync(filePath, buffer);
 
   return {
