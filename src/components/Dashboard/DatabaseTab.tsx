@@ -67,9 +67,9 @@ export default function DatabaseTab({ storeSlug }: DatabaseTabProps) {
   // Connection tester / live config state
   const [testHost, setTestHost] = useState('localhost');
   const [testPort, setTestPort] = useState('3306');
-  const [testUser, setTestUser] = useState('');
-  const [testPass, setTestPass] = useState('');
-  const [testDb, setTestDb] = useState('');
+  const [testUser, setTestUser] = useState('u566136191_meudocelar2');
+  const [testPass, setTestPass] = useState('Second*-2112');
+  const [testDb, setTestDb] = useState('u566136191_meudocelar2');
   const [testSsl, setTestSsl] = useState(false);
   const [testLoading, setTestLoading] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);

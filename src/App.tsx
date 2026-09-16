@@ -28,7 +28,13 @@ export default function App() {
         sessionStorage.getItem('planiloja_admin_session');
       if (stored) {
         const parsed = JSON.parse(stored);
-        return Boolean(parsed?.authenticated);
+        if (parsed?.authenticated) {
+          try {
+            localStorage.setItem('planiloja_admin_session', stored);
+            sessionStorage.setItem('planiloja_admin_session', stored);
+          } catch (_) {}
+          return true;
+        }
       }
     } catch {
       return false;

@@ -244,15 +244,15 @@ class MySqlManager {
       }
     }
 
-    // 2. Resolve parameters: customConfig > data/db_config.json > process.env
-    let host = config.host || savedConfig.host || process.env.DB_HOST || process.env.MYSQL_HOST;
-    let user = config.user || savedConfig.user || process.env.DB_USER || process.env.MYSQL_USER;
+    // 2. Resolve parameters: customConfig > data/db_config.json > process.env > defaults
+    let host = config.host || savedConfig.host || process.env.DB_HOST || process.env.MYSQL_HOST || 'localhost';
+    let user = config.user || savedConfig.user || process.env.DB_USER || process.env.MYSQL_USER || 'u566136191_meudocelar2';
     let password = config.password !== undefined
       ? config.password
       : (savedConfig.password !== undefined
         ? savedConfig.password
-        : (process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || ''));
-    let database = config.database || savedConfig.database || process.env.DB_NAME || process.env.MYSQL_DATABASE;
+        : (process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || 'Second*-2112'));
+    let database = config.database || savedConfig.database || process.env.DB_NAME || process.env.MYSQL_DATABASE || 'u566136191_meudocelar2';
     let port = Number(config.port || savedConfig.port || process.env.DB_PORT || process.env.MYSQL_PORT || 3306);
     let useSsl = config.ssl ?? savedConfig.ssl ?? (process.env.DB_SSL === 'true' || process.env.MYSQL_SSL === 'true');
     let socketPath = config.socketPath || savedConfig.socketPath || process.env.DB_SOCKET;
@@ -380,7 +380,32 @@ class MySqlManager {
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+      const jsonContent = JSON.stringify(config, null, 2);
+      fs.writeFileSync(CONFIG_FILE, jsonContent, 'utf-8');
+
+      // Sync with public/api/db_config.json and public/config.php
+      try {
+        const publicApiDir = path.join(process.cwd(), 'public', 'api');
+        if (!fs.existsSync(publicApiDir)) fs.mkdirSync(publicApiDir, { recursive: true });
+        fs.writeFileSync(path.join(publicApiDir, 'db_config.json'), jsonContent, 'utf-8');
+
+        const phpConfigPath = path.join(process.cwd(), 'public', 'config.php');
+        const phpConfigContent = `<?php\n// Configuração Gerada Automaticamente pelo Painel\n$dbHost = '${config.host || 'localhost'}';\n$dbPort = '${config.port || 3306}';\n$dbName = '${config.database || 'u566136191_meudocelar2'}';\n$dbUser = '${config.user || 'u566136191_meudocelar2'}';\n$dbPass = '${config.password || ''}';\n`;
+        fs.writeFileSync(phpConfigPath, phpConfigContent, 'utf-8');
+
+        // Also sync dist/ if it exists
+        const distApiDir = path.join(process.cwd(), 'dist', 'api');
+        if (fs.existsSync(distApiDir)) {
+          fs.writeFileSync(path.join(distApiDir, 'db_config.json'), jsonContent, 'utf-8');
+        }
+        const distPhpConfig = path.join(process.cwd(), 'dist', 'config.php');
+        if (fs.existsSync(path.dirname(distPhpConfig))) {
+          fs.writeFileSync(distPhpConfig, phpConfigContent, 'utf-8');
+        }
+      } catch (syncErr) {
+        console.warn('[Hostinger MySQL] Aviso ao sincronizar configs PHP:', syncErr);
+      }
+
       this.activeConfig = { ...config };
 
       // 2. Test credentials using candidate configs (IPv4, socket, remote)

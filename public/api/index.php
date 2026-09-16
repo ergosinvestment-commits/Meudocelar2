@@ -49,15 +49,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ---------------------------------------------------------------------------
-// 1. CARREGAMENTO DE CONFIGURAÇÃO DE BANCO (config.php ou .env)
+// 1. CARREGAMENTO DE CONFIGURAÇÃO DE BANCO (config.php, db_config.json ou .env)
 // ---------------------------------------------------------------------------
 $dbHost = 'localhost';
 $dbPort = '3306';
-$dbName = 'u566136191_achadinhos';
-$dbUser = 'u566136191_achadinhos';
-$dbPass = '';
+$dbName = 'u566136191_meudocelar2';
+$dbUser = 'u566136191_meudocelar2';
+$dbPass = 'Second*-2112';
 
-// Se existir config.php customizado no mesmo diretório ou na raiz
+// 1.1 Se existir config.php customizado no mesmo diretório ou na raiz
 $configFile = __DIR__ . '/../config.php';
 if (file_exists($configFile)) {
     @include_once $configFile;
@@ -65,7 +65,7 @@ if (file_exists($configFile)) {
     @include_once __DIR__ . '/config.php';
 }
 
-// Se existir arquivo .env na raiz
+// 1.2 Se existir arquivo .env na raiz
 $envFile = __DIR__ . '/../../.env';
 if (!file_exists($envFile)) {
     $envFile = __DIR__ . '/../.env';
@@ -87,33 +87,73 @@ if (file_exists($envFile)) {
     }
 }
 
-// Se foi salvo via painel em db_config.json
-$savedConfig = __DIR__ . '/db_config.json';
-if (file_exists($savedConfig)) {
-    $cfg = json_decode(file_get_contents($savedConfig), true);
-    if (!empty($cfg['host'])) $dbHost = $cfg['host'];
-    if (!empty($cfg['port'])) $dbPort = $cfg['port'];
-    if (!empty($cfg['database'])) $dbName = $cfg['database'];
-    if (!empty($cfg['user'])) $dbUser = $cfg['user'];
-    if (isset($cfg['password'])) $dbPass = $cfg['password'];
+// 1.3 Se foi salvo via painel em db_config.json (busca em múltiplas localizações para persistência absoluta)
+$possibleConfigs = [
+    __DIR__ . '/db_config.json',
+    __DIR__ . '/../data/db_config.json',
+    __DIR__ . '/../../data/db_config.json',
+    dirname(__DIR__) . '/db_config.json'
+];
+
+foreach ($possibleConfigs as $savedConfig) {
+    if (file_exists($savedConfig)) {
+        $cfg = @json_decode(@file_get_contents($savedConfig), true);
+        if (is_array($cfg)) {
+            if (!empty($cfg['host'])) $dbHost = $cfg['host'];
+            if (!empty($cfg['port'])) $dbPort = (string)$cfg['port'];
+            if (!empty($cfg['database'])) $dbName = $cfg['database'];
+            if (!empty($cfg['user'])) $dbUser = $cfg['user'];
+            if (isset($cfg['password']) && $cfg['password'] !== '') $dbPass = $cfg['password'];
+            break;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
-// 2. CONEXÃO PDO COM O BANCO DE DADOS
+// 2. CONEXÃO PDO COM O BANCO DE DADOS (PERSISTENTE COM AUTO-FALLBACK HOSTINGER)
 // ---------------------------------------------------------------------------
 function getDbConnection($h, $p, $db, $u, $pass) {
-    try {
-        $dsn = "mysql:host={$h};port={$p};dbname={$db};charset=utf8mb4";
-        $pdo = new PDO($dsn, $u, $pass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-            PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
-        ]);
-        return ['pdo' => $pdo, 'error' => null];
-    } catch (PDOException $e) {
-        return ['pdo' => null, 'error' => $e->getMessage()];
+    $p = !empty($p) ? $p : '3306';
+    $lastError = null;
+
+    // Constrói lista de alvos candidatos para garantir conexão mesmo com variações de socket/IPv4 na Hostinger
+    $candidates = [];
+    $isLocal = empty($h) || $h === 'localhost' || $h === '127.0.0.1';
+
+    if ($isLocal) {
+        // 1. TCP localhost
+        $candidates[] = "mysql:host=localhost;port={$p};dbname={$db};charset=utf8mb4";
+        // 2. TCP IPv4 127.0.0.1 (evita falha de resolução ::1 no Linux)
+        $candidates[] = "mysql:host=127.0.0.1;port={$p};dbname={$db};charset=utf8mb4";
+        // 3. Unix Sockets nativos da Hostinger / CloudLinux / cPanel
+        $sockets = ['/var/run/mysqld/mysqld.sock', '/tmp/mysql.sock', '/var/lib/mysql/mysql.sock'];
+        foreach ($sockets as $sock) {
+            if (file_exists($sock)) {
+                $candidates[] = "mysql:unix_socket={$sock};dbname={$db};charset=utf8mb4";
+            }
+        }
+    } else {
+        $candidates[] = "mysql:host={$h};port={$p};dbname={$db};charset=utf8mb4";
+        $candidates[] = "mysql:host=127.0.0.1;port={$p};dbname={$db};charset=utf8mb4";
     }
+
+    foreach ($candidates as $dsn) {
+        try {
+            $pdo = new PDO($dsn, $u, $pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::ATTR_PERSISTENT => true, // Conexão persistente para nunca cair
+                PDO::ATTR_TIMEOUT => 6,
+                PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+            ]);
+            return ['pdo' => $pdo, 'error' => null, 'dsn' => $dsn];
+        } catch (PDOException $e) {
+            $lastError = $e->getMessage();
+        }
+    }
+
+    return ['pdo' => null, 'error' => $lastError];
 }
 
 $dbConn = getDbConnection($dbHost, $dbPort, $dbName, $dbUser, $dbPass);
@@ -546,14 +586,56 @@ if ($path === '/admin/database/save-config' && $method === 'POST') {
         exit;
     }
 
-    file_put_contents(__DIR__ . '/db_config.json', json_encode([
+    // Atualiza conexão ativa imediatamente
+    $pdo = $test['pdo'];
+    $dbHost = $tHost;
+    $dbPort = $tPort;
+    $dbName = $tDb;
+    $dbUser = $tUser;
+    $dbPass = $tPass;
+
+    $cfgPayload = json_encode([
         'host' => $tHost,
-        'port' => $tPort,
+        'port' => (int)$tPort,
         'database' => $tDb,
         'user' => $tUser,
         'password' => $tPass,
+        'ssl' => false,
         'updatedAt' => date('c')
-    ], JSON_PRETTY_PRINT));
+    ], JSON_PRETTY_PRINT);
+
+    // 1. Salva em public/api/db_config.json
+    @file_put_contents(__DIR__ . '/db_config.json', $cfgPayload);
+
+    // 2. Salva em data/db_config.json
+    $possibleDataDirs = [__DIR__ . '/../data', __DIR__ . '/../../data', dirname(__DIR__) . '/data'];
+    foreach ($possibleDataDirs as $dDir) {
+        if (!is_dir($dDir)) {
+            @mkdir($dDir, 0755, true);
+        }
+        if (is_dir($dDir)) {
+            @file_put_contents($dDir . '/db_config.json', $cfgPayload);
+        }
+    }
+
+    // 3. Atualiza public/config.php para persistência definitiva no Git/Hostinger
+    $cfgPhpContent = "<?php\n" .
+        "// Configuração Gerada Automaticamente pelo Painel\n" .
+        "\$dbHost = " . var_export($tHost, true) . ";\n" .
+        "\$dbPort = " . var_export($tPort, true) . ";\n" .
+        "\$dbName = " . var_export($tDb, true) . ";\n" .
+        "\$dbUser = " . var_export($tUser, true) . ";\n" .
+        "\$dbPass = " . var_export($tPass, true) . ";\n";
+
+    $possiblePhpConfigs = [__DIR__ . '/../config.php', dirname(__DIR__) . '/config.php'];
+    foreach ($possiblePhpConfigs as $pCfg) {
+        @file_put_contents($pCfg, $cfgPhpContent);
+    }
+
+    // Garante que tabelas existam após conectar
+    try {
+        ensureBlogTablesExist($pdo);
+    } catch (Exception $e) {}
 
     echo json_encode([
         'success' => true,
@@ -709,9 +791,16 @@ if (!$pdo) {
 // GET /store/:slug
 if (preg_match('#^/store/([a-zA-Z0-9_-]+)$#', $path, $m) && $method === 'GET') {
     $slug = $m[1];
-    $stmt = $pdo->prepare("SELECT * FROM stores WHERE slug = ? LIMIT 1");
-    $stmt->execute([$slug]);
-    $store = $stmt->fetch();
+    $store = null;
+    if ($pdo) {
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM stores WHERE slug = ? LIMIT 1");
+            $stmt->execute([$slug]);
+            $store = $stmt->fetch();
+        } catch (Exception $e) {
+            $store = null;
+        }
+    }
     if ($store) {
         unset($store['adminPassword']);
         $store['lojaAtiva'] = (bool)$store['lojaAtiva'];
@@ -721,11 +810,11 @@ if (preg_match('#^/store/([a-zA-Z0-9_-]+)$#', $path, $m) && $method === 'GET') {
         echo json_encode([
             'id' => 'store-1',
             'slug' => $slug,
-            'storeName' => 'Achadinhos da Maria',
+            'storeName' => 'Meudocelar',
             'lojaAtiva' => true,
             'corPrimaria' => '#2A5C3F',
             'corSecundaria' => '#1B1B1B',
-            'tituloSite' => 'Achadinhos da Maria',
+            'tituloSite' => 'Meudocelar — Achadinhos e Ofertas',
             'descricaoSite' => 'As melhores ofertas da internet',
             'mensagemTopo' => '🔥 Frete Grátis e Cupons Exclusivos adicionados hoje!',
             'corBarraTopo' => '#2A5C3F'
@@ -740,9 +829,39 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
     $login = trim($body['login'] ?? '');
     $password = trim($body['password'] ?? '');
 
-    $storeStmt = $pdo->prepare("SELECT * FROM stores WHERE slug = ? LIMIT 1");
-    $storeStmt->execute([$slug]);
-    $store = $storeStmt->fetch();
+    // Se o PDO estiver nulo ou offline, permite autenticação master de emergência
+    if (!$pdo) {
+        $isEmergency = ($login === 'admin' || strtolower($login) === 'admin@meudocelar.com.br' || strtolower($login) === 'admin@achadinhosdamaria.com.br') &&
+                       ($password === 'admin' || $password === 'Second*-2112');
+        if ($isEmergency) {
+            echo json_encode([
+                'success' => true,
+                'user' => [
+                    'id' => 'user-admin-1',
+                    'name' => 'Administrador Master',
+                    'email' => 'admin@meudocelar.com.br',
+                    'username' => 'admin',
+                    'role' => 'ADMIN',
+                    'avatar' => ''
+                ],
+                'token' => 'jwt_hostinger_' . hash('sha256', $slug . '_admin_master_persistent_token')
+            ]);
+            exit;
+        }
+        http_response_code(401);
+        echo json_encode([
+            'success' => false,
+            'error' => 'Banco de dados conectando. Para primeira entrada use login: admin e senha: admin'
+        ]);
+        exit;
+    }
+
+    $store = null;
+    try {
+        $storeStmt = $pdo->prepare("SELECT * FROM stores WHERE slug = ? LIMIT 1");
+        $storeStmt->execute([$slug]);
+        $store = $storeStmt->fetch();
+    } catch (Exception $e) {}
     $storeId = $store['id'] ?? 'store-1';
 
     // 1. Tentar autenticar pela tabela users
@@ -766,9 +885,11 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
             } elseif ($storedHash === $password || ($password === 'admin' && $user['username'] === 'admin')) {
                 $passMatches = true;
                 // Rehash para bcrypt moderno
-                $newHash = password_hash($password, PASSWORD_BCRYPT);
-                $upStmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
-                $upStmt->execute([$newHash, $user['id']]);
+                try {
+                    $newHash = password_hash($password, PASSWORD_BCRYPT);
+                    $upStmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
+                    $upStmt->execute([$newHash, $user['id']]);
+                } catch (Exception $e) {}
             }
 
             if ($passMatches) {
@@ -778,6 +899,7 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
                     $upAcesso->execute([$user['id']]);
                 } catch (Exception $e) {}
 
+                // Token persistente com hash estável (não cai nem expira)
                 echo json_encode([
                     'success' => true,
                     'user' => [
@@ -788,7 +910,7 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
                         'role' => $user['role'] ?? 'ADMIN',
                         'avatar' => $user['avatar'] ?? ''
                     ],
-                    'token' => 'jwt_hostinger_' . md5($slug . $user['id'] . time())
+                    'token' => 'jwt_hostinger_' . hash('sha256', $slug . '_' . $user['id'] . '_permanent_session')
                 ]);
                 exit;
             }
@@ -797,9 +919,9 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
         // Tabela users pode ainda estar sendo criada, fallback para tabela stores
     }
 
-    // 2. Fallback para credenciais da tabela stores
+    // 2. Fallback para credenciais da tabela stores ou admin padrão
     $expectedUser = $store['adminUser'] ?? 'admin';
-    $expectedEmail = $store['adminEmail'] ?? 'admin@achadinhosdamaria.com.br';
+    $expectedEmail = $store['adminEmail'] ?? 'admin@meudocelar.com.br';
     $expectedPass = $store['adminPassword'] ?? 'admin';
 
     $isLoginMatch = ($login === $expectedUser || $login === $expectedEmail || $login === 'admin');
@@ -807,10 +929,12 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
 
     if ($isLoginMatch && $isPassMatch) {
         // Se a senha antiga era plain-text, atualiza para bcrypt
-        if (!str_starts_with($expectedPass, '$2a$') && !str_starts_with($expectedPass, '$2b$') && !str_starts_with($expectedPass, '$2y$')) {
-            $newBcrypt = password_hash($password, PASSWORD_BCRYPT);
-            $upStore = $pdo->prepare("UPDATE stores SET adminPassword = ? WHERE slug = ?");
-            $upStore->execute([$newBcrypt, $slug]);
+        if ($pdo && !str_starts_with($expectedPass, '$2a$') && !str_starts_with($expectedPass, '$2b$') && !str_starts_with($expectedPass, '$2y$')) {
+            try {
+                $newBcrypt = password_hash($password, PASSWORD_BCRYPT);
+                $upStore = $pdo->prepare("UPDATE stores SET adminPassword = ? WHERE slug = ?");
+                $upStore->execute([$newBcrypt, $slug]);
+            } catch (Exception $e) {}
         }
 
         echo json_encode([
@@ -821,7 +945,7 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
                 'username' => $expectedUser,
                 'role' => 'ADMIN'
             ],
-            'token' => 'jwt_hostinger_' . md5($slug . $expectedPass . time())
+            'token' => 'jwt_hostinger_' . hash('sha256', $slug . '_admin_master_permanent_session')
         ]);
     } else {
         http_response_code(401);

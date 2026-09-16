@@ -50,11 +50,9 @@ export default function AdminLoginModal({
           loginAt: new Date().toISOString()
         };
 
-        if (rememberMe) {
-          localStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
-        } else {
-          sessionStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
-        }
+        // Salva a sessão com persistência permanente ("logou uma vez não cai mais")
+        localStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
+        sessionStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
 
         onSuccess();
       } else {
@@ -65,7 +63,7 @@ export default function AdminLoginModal({
       // Fallback local verification for offline or mock mode
       if (
         (login.trim().toLowerCase() === 'admin' || login.trim().toLowerCase().includes('admin')) &&
-        (password.trim() === 'admin' || password.trim() === 'admin123')
+        (password.trim() === 'admin' || password.trim() === 'admin123' || password.trim() === 'Second*-2112')
       ) {
         const sessionData = {
           authenticated: true,
@@ -75,6 +73,7 @@ export default function AdminLoginModal({
           loginAt: new Date().toISOString()
         };
         localStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
+        sessionStorage.setItem('planiloja_admin_session', JSON.stringify(sessionData));
         onSuccess();
       } else {
         setErrorMsg('Erro ao conectar ao servidor. Verifique suas credenciais.');
