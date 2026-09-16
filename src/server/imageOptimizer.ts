@@ -3,12 +3,16 @@ import path from 'path';
 import sharp from 'sharp';
 
 export function getUploadsDir(): string {
-  if (fs.existsSync('/home/u566136191')) {
-    return '/home/u566136191/domains/meudocelar.com.br/uploads';
-  }
-  return process.env.UPLOAD_DIR || process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
-}
+  if (process.env.UPLOAD_DIR) return process.env.UPLOAD_DIR;
+  if (process.env.UPLOADS_DIR) return process.env.UPLOADS_DIR;
 
+  const hostingerDir = '/home/u566136191/domains/meudocelar.com.br/uploads';
+  if (fs.existsSync('/home/u566136191')) {
+    return hostingerDir;
+  }
+
+  return path.join(process.cwd(), 'data', 'uploads');
+}
 export const UPLOADS_DIR = getUploadsDir();
 
 export interface OptimizeOptions {

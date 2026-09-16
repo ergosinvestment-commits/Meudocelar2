@@ -71,7 +71,7 @@ class MySqlManager {
     };
   }
 
-  private buildCandidateConfigs(cfg: MySqlConfig): Array<mysql.PoolOptions & { _desc: string }> {
+  private buildCandidateConfigs(cfg: MySqlConfig): Array<{ description: string; options: mysql.PoolOptions }> {
     const rawHost = (cfg.host || '').trim();
     const port = Number(cfg.port || 3306);
     const user = (cfg.user || 'root').trim();
@@ -97,33 +97,39 @@ class MySqlManager {
     const isLocal = !rawHost || rawHost === 'localhost' || rawHost === '127.0.0.1' || rawHost === '::1';
 
     if (isLocal) {
-      const candidates: Array<mysql.PoolOptions & { _desc: string }> = [];
+      const candidates: Array<{ description: string; options: mysql.PoolOptions }> = [];
 
       // 1. Primary: IPv4 127.0.0.1 (Bypasses Node.js IPv6 ::1 lookup issues on Linux)
       candidates.push({
-        ...baseOptions,
-        host: '127.0.0.1',
-        port,
-        _desc: `TCP 127.0.0.1:${port}`
+        description: `TCP 127.0.0.1:${port}`,
+        options: {
+          ...baseOptions,
+          host: '127.0.0.1',
+          port
+        }
       });
 
       // 2. Check existing known UNIX sockets (standard in Hostinger, cPanel, CloudLinux)
       for (const sock of KNOWN_UNIX_SOCKETS) {
         if (fs.existsSync(sock)) {
           candidates.push({
-            ...baseOptions,
-            socketPath: sock,
-            _desc: `Unix Socket (${sock})`
+            description: `Unix Socket (${sock})`,
+            options: {
+              ...baseOptions,
+              socketPath: sock
+            }
           });
         }
       }
 
       // 3. Fallback: standard localhost
       candidates.push({
-        ...baseOptions,
-        host: 'localhost',
-        port,
-        _desc: `TCP localhost:${port}`
+        description: `TCP localhost:${port}`,
+        options: {
+          ...baseOptions,
+          host: 'localhost',
+          port
+        }
       });
 
       return candidates;
@@ -132,11 +138,13 @@ class MySqlManager {
     // Remote Host (e.g., Hostinger server IP or hostname)
     return [
       {
-        ...baseOptions,
-        host: rawHost,
-        port,
-        connectTimeout: 12000,
-        _desc: `TCP ${rawHost}:${port}`
+        description: `TCP ${rawHost}:${port}`,
+        options: {
+          ...baseOptions,
+          host: rawHost,
+          port,
+          connectTimeout: 12000
+        }
       }
     ];
   }
@@ -154,11 +162,11 @@ class MySqlManager {
 
       for (const candidate of candidates) {
         try {
-          const testPool = mysql.createPool(candidate);
+          const testPool = mysql.createPool(candidate.options);
           await testPool.query('SELECT 1 as test');
           
           this.pool = testPool;
-          this.resolvedSocketPath = candidate.socketPath || null;
+          this.resolvedSocketPath = candidate.options.socketPath || null;
           this.isConnected = true;
           this.connectionError = null;
 
@@ -169,7 +177,7 @@ class MySqlManager {
             }
           });
 
-          console.log(`[Hostinger MySQL] Conexão restabelecida com sucesso via ${candidate._desc}.`);
+          console.log(`[Hostinger MySQL] Conexão restabelecida com sucesso via ${candidate.description}.`);
           return true;
         } catch (err) {
           lastErr = err;
@@ -301,11 +309,11 @@ class MySqlManager {
 
       for (const candidate of candidates) {
         try {
-          const testPool = mysql.createPool(candidate);
+          const testPool = mysql.createPool(candidate.options);
           await testPool.query('SELECT 1 as test');
           
           this.pool = testPool;
-          this.resolvedSocketPath = candidate.socketPath || null;
+          this.resolvedSocketPath = candidate.options.socketPath || null;
           this.isConnected = true;
           this.connectionError = null;
           connectedCandidate = candidate;
@@ -317,7 +325,7 @@ class MySqlManager {
             }
           });
 
-          console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' via ${candidate._desc}. Conexão persistente ativa.`);
+          console.log(`[Hostinger MySQL] Conectado com sucesso ao banco '${database}' via ${candidate.description}. Conexão persistente ativa.`);
           break;
         } catch (err: any) {
           lastErr = err;
@@ -449,16 +457,7 @@ class MySqlManager {
 
       for (const candidate of candidates) {
         try {
-          const conn = await mysql.createConnection({
-            host: candidate.host,
-            port: candidate.port,
-            user: candidate.user,
-            password: candidate.password,
-            database: candidate.database,
-            socketPath: candidate.socketPath,
-            ssl: candidate.ssl,
-            connectTimeout: candidate.connectTimeout || 8000
-          });
+          const conn = await mysql.createConnection(candidate.options);
 
           await conn.query('SELECT 1');
           await conn.end();
@@ -466,7 +465,7 @@ class MySqlManager {
           const latencyMs = Date.now() - startTime;
           return {
             success: true,
-            message: `Conexão bem-sucedida com o servidor MySQL via ${candidate._desc}! (Latência: ${latencyMs}ms)`,
+            message: `Conexão bem-sucedida com o servidor MySQL via ${candidate.description}! (Latência: ${latencyMs}ms)`,
             latencyMs
           };
         } catch (err) {
