@@ -4,17 +4,6 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 
-// 1. Define o diretório de uploads lendo a variável de ambiente da Hostinger (ou fallback para local)
-export const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
-
-// 2. Garante que a pasta física exista no servidor ao iniciar a aplicação
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
-// 3. Expõe a rota estática HTTP /uploads apontando para o caminho correto
-app.use('/uploads', express.static(UPLOADS_DIR, { maxAge: '30d' }));
-
 import compression from 'compression';
 import helmet from 'helmet';
 import { createServer as createViteServer } from 'vite';
@@ -23,7 +12,7 @@ import { mysqlManager } from './src/server/mysql';
 import { loginRateLimiter, apiRateLimiter, requireAdminAuth } from './src/server/security';
 import { fetchSupplierData, calculateMarkupPrice, detectPlatformFromUrl } from './src/server/priceMonitor';
 import { PriceCheckResult } from './src/types';
-import { saveOptimizedUpload, optimizeBuffer, optimizeImageUrl } from './src/server/imageOptimizer';
+import { saveOptimizedUpload, optimizeBuffer, optimizeImageUrl, UPLOADS_DIR } from './src/server/imageOptimizer';
 
 async function startServer() {
   const app = express();
@@ -75,7 +64,6 @@ async function startServer() {
   app.use(compression());
 
   // Static uploads directory for images saved from computer
-  const UPLOADS_DIR = path.join(process.cwd(), 'data', 'uploads');
   if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
