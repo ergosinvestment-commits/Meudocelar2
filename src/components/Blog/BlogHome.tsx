@@ -281,7 +281,11 @@ export default function BlogHome({
             <div className="relative shrink-0" ref={categoriasRef}>
               <button
                 type="button"
-                onClick={() => setCategoriasOpen(!categoriasOpen)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCategoriasOpen(!categoriasOpen);
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
                 className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-bold uppercase whitespace-nowrap rounded-xl transition cursor-pointer shadow-xs ${
                   categoriasOpen || activeCategory !== 'Todos'
                     ? 'text-white'

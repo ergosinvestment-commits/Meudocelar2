@@ -662,10 +662,12 @@ export default function StoreFront({ storeSlug, onOpenDashboard, onNavigateToBlo
             <button
               id="btn-departamentos-menu"
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 setDepartamentosOpen(!departamentosOpen);
                 setHoveredCategory(null);
               }}
+              onMouseDown={(e) => e.stopPropagation()}
               className={`inline-flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-bold tracking-wide uppercase whitespace-nowrap rounded-xl transition cursor-pointer shadow-xs ${
                 departamentosOpen || activeCategory !== 'Todos'
                   ? 'bg-[#2A5C3F] text-white ring-2 ring-[#2A5C3F]/20'
