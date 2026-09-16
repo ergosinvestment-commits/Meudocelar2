@@ -5,9 +5,14 @@ import sharp from 'sharp';
 // Detecta automaticamente o servidor da Hostinger e força o caminho correto no plural
 const HOSTINGER_PATH = '/home/u566136191/files/uploads';
 
-export const UPLOADS_DIR = fs.existsSync('/home/u566136191')
-  ? HOSTINGER_PATH
-  : (process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads'));
+export function getUploadsDir(): string {
+  if (fs.existsSync('/home/u566136191')) {
+    return '/home/u566136191/files/uploads';
+  }
+  return process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
+}
+
+export const UPLOADS_DIR = getUploadsDir();
 
 export interface OptimizeOptions {
   maxWidth?: number;

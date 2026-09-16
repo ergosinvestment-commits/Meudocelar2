@@ -86,7 +86,7 @@ async function startServer() {
 
       // If it's a base64 Data URL, compress to WebP (or AVIF) and save to disk
       if (dataUrl.startsWith('data:image/')) {
-        const { publicUrl, originalSize, newSize } = await saveOptimizedUpload(dataUrl, UPLOADS_DIR, {
+        const { publicUrl, originalSize, newSize } = await saveOptimizedUpload(dataUrl, undefined, {
           maxWidth: 1600,
           maxHeight: 1600,
           quality: 82,
