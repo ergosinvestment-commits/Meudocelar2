@@ -3,7 +3,7 @@ import path from 'path';
 import sharp from 'sharp';
 
 // Diretório de uploads (Lê a variável de ambiente UPLOADS_DIR da Hostinger ou usa pasta local em dev)
-export const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
+export const UPLOADS_DIR = process.env['UPLOADS_DIR'] || path.join(process.cwd(), 'data', 'uploads');
 
 export interface OptimizeOptions {
   maxWidth?: number;
