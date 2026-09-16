@@ -2,14 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 
-// Detecta automaticamente o servidor da Hostinger e força o caminho correto no plural
-const HOSTINGER_PATH = '/home/u566136191/files/uploads';
-
 export function getUploadsDir(): string {
   if (fs.existsSync('/home/u566136191')) {
-    return '/home/u566136191/files/uploads';
+    return '/home/u566136191/domains/meudocelar.com.br/uploads';
   }
-  return process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
+  return process.env.UPLOAD_DIR || process.env.UPLOADS_DIR || path.join(process.cwd(), 'data', 'uploads');
 }
 
 export const UPLOADS_DIR = getUploadsDir();
@@ -217,8 +214,7 @@ export async function saveOptimizedUpload(
   const filePath = path.join(destination, fileName);
   await fs.promises.writeFile(filePath, buffer);
 
-  const isHostinger = fs.existsSync('/home/u566136191') || destination.includes('files/uploads');
-  const publicUrl = isHostinger ? `/files/uploads/${fileName}` : `/uploads/${fileName}`;
+  const publicUrl = destination.includes('files/uploads') ? `/files/uploads/${fileName}` : `/uploads/${fileName}`;
 
   return {
     publicUrl,
