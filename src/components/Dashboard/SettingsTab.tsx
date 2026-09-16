@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StoreConfig, StoreUser, UserRole } from '../../types';
 import { updateStoreConfig } from '../../api/client';
-import { Settings, MessageCircle, Send, Share2, Shield, Activity, Check, Eye, EyeOff, KeyRound, Sparkles, Users, UserPlus, Edit2, Trash2, UserCheck, UserX, Crown, ShieldCheck, X, Key, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { Settings, MessageCircle, Send, Share2, Shield, Activity, Check, Eye, EyeOff, KeyRound, Sparkles, Users, UserPlus, Edit2, Trash2, UserCheck, UserX, Crown, ShieldCheck, X, Key, CheckCircle2, AlertCircle, Clock, Lock } from 'lucide-react';
 
 interface SettingsTabProps {
   storeSlug: string;
@@ -23,6 +23,11 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Master Admin Credentials State
+  const [savingMaster, setSavingMaster] = useState(false);
+  const [masterSavedSuccess, setMasterSavedSuccess] = useState(false);
+  const [masterError, setMasterError] = useState<string | null>(null);
 
   // Users management state inside Security section
   const [users, setUsers] = useState<StoreUser[]>([]);
@@ -50,7 +55,23 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
       const res = await fetch(`/api/admin/store/${storeSlug}/users`);
       if (res.ok) {
         const data = await res.json();
-        setUsers(Array.isArray(data) ? data : []);
+        const list: StoreUser[] = Array.isArray(data) ? data : [];
+        const masterUsername = (formData.adminUser || config.adminUser || 'admin').trim().toLowerCase();
+        const hasMaster = list.some(u => u.isMaster || u.id === 'user-admin-1' || u.username.toLowerCase() === masterUsername);
+        if (!hasMaster) {
+          list.unshift({
+            id: 'user-admin-1',
+            storeId: 'store-1',
+            nome: 'Administrador Mestre',
+            email: formData.adminEmail || config.adminEmail || 'admin@meudocelar.com.br',
+            username: formData.adminUser || config.adminUser || 'admin',
+            role: 'ADMIN',
+            ativo: true,
+            isMaster: true,
+            avatar: ''
+          });
+        }
+        setUsers(list);
       }
     } catch (err) {
       console.error('Erro ao carregar usuários:', err);
@@ -62,6 +83,65 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
   useEffect(() => {
     loadUsers();
   }, [storeSlug]);
+
+  async function handleSaveMasterCredentials() {
+    if (!formData.adminUser || !formData.adminUser.trim()) {
+      setMasterError('O nome do usuário mestre não pode ficar vazio.');
+      return;
+    }
+    setSavingMaster(true);
+    setMasterError(null);
+    try {
+      const cleanUser = formData.adminUser.trim();
+      const cleanEmail = (formData.adminEmail || '').trim().toLowerCase();
+      const cleanPass = (formData.adminPassword || '').trim();
+
+      const payload: Partial<StoreConfig> = {
+        adminUser: cleanUser,
+        adminEmail: cleanEmail,
+      };
+      if (cleanPass) {
+        payload.adminPassword = cleanPass;
+      }
+
+      await updateStoreConfig(storeSlug, payload);
+
+      // Redundancy call for hostinger PHP endpoint
+      await fetch('/api/admin/auth/change-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: storeSlug,
+          newUser: cleanUser,
+          newEmail: cleanEmail,
+          newPassword: cleanPass
+        })
+      }).catch(() => {});
+
+      // Synchronize current local storage session
+      try {
+        const stored = localStorage.getItem('planiloja_admin_session');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed?.user) {
+            parsed.user.username = cleanUser;
+            if (cleanEmail) parsed.user.email = cleanEmail;
+            parsed.user.isMaster = true;
+            localStorage.setItem('planiloja_admin_session', JSON.stringify(parsed));
+          }
+        }
+      } catch (e) {}
+
+      setMasterSavedSuccess(true);
+      setTimeout(() => setMasterSavedSuccess(false), 4000);
+      await loadUsers();
+      onRefresh();
+    } catch (err: any) {
+      setMasterError(err?.message || 'Erro ao salvar credenciais mestras.');
+    } finally {
+      setSavingMaster(false);
+    }
+  }
 
   function handleOpenCreateUser() {
     setEditingUser(null);
@@ -78,13 +158,14 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
   }
 
   function handleOpenEditUser(user: StoreUser) {
-    setEditingUser(user);
-    setFormName(user.nome || '');
+    const isMaster = !!(user.isMaster || user.id === 'user-admin-1' || (formData.adminUser && user.username.toLowerCase() === formData.adminUser.toLowerCase()));
+    setEditingUser({ ...user, isMaster });
+    setFormName(user.nome || (isMaster ? 'Administrador Mestre' : ''));
     setFormEmail(user.email || '');
     setFormUsername(user.username || '');
     setFormPassword('');
-    setFormRole(user.role || 'ADMIN');
-    setFormAtivo(user.ativo !== false);
+    setFormRole(isMaster ? 'ADMIN' : (user.role || 'ADMIN'));
+    setFormAtivo(isMaster ? true : (user.ativo !== false));
     setFormAvatar(user.avatar || '');
     setShowUserPassword(false);
     setUserFeedback(null);
@@ -96,12 +177,14 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
     setSavingUser(true);
     setUserFeedback(null);
 
+    const isMaster = !!(editingUser?.isMaster || editingUser?.id === 'user-admin-1' || (editingUser && formData.adminUser && editingUser.username.toLowerCase() === formData.adminUser.toLowerCase()));
+
     const payload: Partial<StoreUser> = {
       nome: formName.trim(),
       email: formEmail.trim().toLowerCase(),
       username: formUsername.trim().toLowerCase(),
-      role: formRole,
-      ativo: formAtivo,
+      role: isMaster ? 'ADMIN' : formRole,
+      ativo: isMaster ? true : formAtivo,
       avatar: formAvatar.trim()
     };
 
@@ -142,12 +225,45 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
         return;
       }
 
+      // If master user was edited, synchronize with store formData and session!
+      if (isMaster) {
+        setFormData(prev => ({
+          ...prev,
+          adminUser: payload.username || prev.adminUser,
+          adminEmail: payload.email || prev.adminEmail,
+          ...(payload.password ? { adminPassword: payload.password } : {})
+        }));
+
+        await updateStoreConfig(storeSlug, {
+          adminUser: payload.username,
+          adminEmail: payload.email,
+          ...(payload.password ? { adminPassword: payload.password } : {})
+        }).catch(() => {});
+
+        try {
+          const stored = localStorage.getItem('planiloja_admin_session');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed?.user) {
+              parsed.user.username = payload.username;
+              if (payload.email) parsed.user.email = payload.email;
+              parsed.user.isMaster = true;
+              localStorage.setItem('planiloja_admin_session', JSON.stringify(parsed));
+            }
+          }
+        } catch (e) {}
+
+        onRefresh();
+      }
+
       setUserFeedback({
         type: 'success',
-        message: editingUser ? 'Usuário atualizado com sucesso!' : 'Novo usuário criado com sucesso!'
+        message: isMaster
+          ? 'Usuário Administrador Mestre atualizado com sucesso! As novas credenciais estão ativas.'
+          : (editingUser ? 'Usuário atualizado com sucesso!' : 'Novo usuário criado com sucesso!')
       });
       setIsUserModalOpen(false);
-      loadUsers();
+      await loadUsers();
     } catch (err: any) {
       setUserFeedback({ type: 'error', message: err?.message || 'Erro de conexão.' });
     } finally {
@@ -511,7 +627,7 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Digite a nova senha..."
+                placeholder="Digite para trocar a senha..."
                 value={formData.adminPassword || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, adminPassword: e.target.value }))}
                 className="w-full pl-3.5 pr-10 py-2.5 text-sm bg-neutral-50 border border-neutral-200 rounded-xl outline-none focus:bg-white focus:border-neutral-400 font-mono"
@@ -529,13 +645,53 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
           </div>
         </div>
 
+        {/* Master Admin Direct Action Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 pb-1 border-b border-neutral-100">
+          <div className="text-xs text-neutral-500 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span>Altere o usuário, e-mail ou senha acima e clique no botão para salvar imediatamente.</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {masterSavedSuccess && (
+              <span className="text-xs font-semibold text-emerald-600 flex items-center gap-1.5 animate-in fade-in">
+                <Check className="w-4 h-4" /> Credenciais mestras salvas com sucesso!
+              </span>
+            )}
+            {masterError && (
+              <span className="text-xs font-semibold text-rose-600 flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4" /> {masterError}
+              </span>
+            )}
+            <button
+              type="button"
+              id="btn-save-master-credentials"
+              onClick={handleSaveMasterCredentials}
+              disabled={savingMaster}
+              className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+            >
+              {savingMaster ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Salvando Acesso Mestre...</span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Salvar Usuário Mestre</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Embedded Users Creation & Editing Section */}
-        <div className="pt-4 border-t border-neutral-100 space-y-4">
+        <div className="pt-2 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-emerald-600" />
               <h4 className="text-xs font-bold uppercase tracking-wider text-neutral-800">
-                Criação e Edição de Usuários & Operadores ({users.length})
+                Lista de Usuários & Operadores ({users.length})
               </h4>
             </div>
             <button
@@ -550,14 +706,14 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
           </div>
 
           <p className="text-xs text-neutral-500">
-            Adicione novos administradores, gerentes ou editores com senhas dedicadas para operar esta loja.
+            Você pode editar o Administrador Mestre ou cadastrar outros administradores, gerentes e editores.
           </p>
 
           {loadingUsers ? (
             <div className="py-6 text-center text-xs text-neutral-400">Carregando usuários...</div>
           ) : users.length === 0 ? (
             <div className="py-6 text-center text-xs text-neutral-400 bg-neutral-50 rounded-xl border border-neutral-100">
-              Nenhum usuário adicional cadastrado. Clique em "Novo Usuário" para começar.
+              Nenhum usuário cadastrado.
             </div>
           ) : (
             <div className="overflow-x-auto border border-neutral-200 rounded-xl">
@@ -572,63 +728,89 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-neutral-50/70 transition-colors">
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-2">
-                          {u.avatar ? (
-                            <img src={u.avatar} alt={u.nome} className="w-7 h-7 rounded-full object-cover border border-neutral-200" />
-                          ) : (
-                            <div className="w-7 h-7 rounded-full bg-neutral-200 flex items-center justify-center font-bold text-neutral-700 text-xs">
-                              {u.nome?.charAt(0).toUpperCase()}
+                  {users.map((u) => {
+                    const isMaster = !!(u.isMaster || u.id === 'user-admin-1' || (formData.adminUser && u.username.toLowerCase() === formData.adminUser.toLowerCase()));
+                    return (
+                      <tr key={u.id} className={`transition-colors ${isMaster ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-neutral-50/70'}`}>
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-2">
+                            {u.avatar ? (
+                              <img src={u.avatar} alt={u.nome} className="w-7 h-7 rounded-full object-cover border border-neutral-200" />
+                            ) : (
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${
+                                isMaster ? 'bg-amber-200 text-amber-900' : 'bg-neutral-200 text-neutral-700'
+                              }`}>
+                                {isMaster ? <Crown className="w-3.5 h-3.5 text-amber-700" /> : (u.nome?.charAt(0).toUpperCase() || 'U')}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-bold text-neutral-900 flex items-center gap-1.5">
+                                <span>{u.nome || (isMaster ? 'Administrador Mestre' : 'Usuário')}</span>
+                                {isMaster && (
+                                  <span className="text-[10px] px-1.5 py-0.2 bg-amber-200 text-amber-900 font-bold rounded">Mestre</span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-neutral-400 font-mono">@{u.username}</div>
                             </div>
-                          )}
-                          <div>
-                            <div className="font-bold text-neutral-900">{u.nome}</div>
-                            <div className="text-[11px] text-neutral-400">@{u.username}</div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 text-neutral-700 font-medium">{u.email}</td>
-                      <td className="py-2.5 px-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          u.role === 'ADMIN' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                          u.role === 'GERENTE' ? 'bg-sky-50 text-sky-800 border border-sky-200' :
-                          'bg-amber-50 text-amber-800 border border-amber-200'
-                        }`}>
-                          {u.role === 'ADMIN' && <Crown className="w-2.5 h-2.5 text-emerald-600" />}
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          u.ativo !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
-                        }`}>
-                          {u.ativo !== false ? 'Ativo' : 'Inativo'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditUser(u)}
-                            className="p-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition cursor-pointer"
-                            title="Editar usuário"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setUserToDelete(u)}
-                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
-                            title="Excluir usuário"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-2.5 px-3 text-neutral-700 font-medium">{u.email}</td>
+                        <td className="py-2.5 px-3">
+                          {isMaster ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+                              <Crown className="w-3 h-3 text-amber-600" />
+                              MESTRE (ROOT)
+                            </span>
+                          ) : (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              u.role === 'ADMIN' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                              u.role === 'GERENTE' ? 'bg-sky-50 text-sky-800 border border-sky-200' :
+                              'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {u.role === 'ADMIN' && <Crown className="w-2.5 h-2.5 text-emerald-600" />}
+                              {u.role}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            u.ativo !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-neutral-100 text-neutral-500'
+                          }`}>
+                            {u.ativo !== false ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditUser(u)}
+                              className="p-1.5 rounded-lg bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition cursor-pointer"
+                              title={isMaster ? 'Editar Administrador Mestre' : 'Editar usuário'}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            {isMaster ? (
+                              <span
+                                className="p-1.5 rounded-lg bg-neutral-100 text-neutral-400 cursor-not-allowed inline-flex items-center justify-center"
+                                title="O Administrador Mestre do sistema não pode ser excluído"
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setUserToDelete(u)}
+                                className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition cursor-pointer"
+                                title="Excluir usuário"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -728,7 +910,7 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
                   <Users className="w-4 h-4" />
                 </div>
                 <h3 className="font-bold text-base text-neutral-900">
-                  {editingUser ? 'Editar Usuário do Sistema' : 'Cadastrar Novo Usuário'}
+                  {editingUser ? (editingUser.isMaster ? 'Editar Administrador Mestre' : 'Editar Usuário do Sistema') : 'Cadastrar Novo Usuário'}
                 </h3>
               </div>
               <button
@@ -741,6 +923,15 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
             </div>
 
             <div className="p-6 space-y-4">
+              {editingUser?.isMaster && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                  <Crown className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Editando Usuário Mestre (Root):</span> Você pode atualizar o Nome, o Nome de Usuário (login), o E-mail e a Senha Mestra. As alterações serão salvas imediatamente nas credenciais mestras do sistema.
+                  </div>
+                </div>
+              )}
+
               {userFeedback && (
                 <div className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
                   userFeedback.type === 'success' ? 'bg-emerald-50 text-emerald-900 border-emerald-200' : 'bg-rose-50 text-rose-900 border-rose-200'
@@ -820,26 +1011,52 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-neutral-700 mb-1">Nível de Permissão (Papel)</label>
+                <label className="block text-xs font-bold text-neutral-700 mb-1">
+                  Nível de Permissão (Papel) {editingUser?.isMaster && <span className="text-amber-700 font-normal">(Fixo: ADMIN para o usuário mestre)</span>}
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   <label className={`flex flex-col p-2.5 rounded-xl border text-center cursor-pointer transition ${
                     formRole === 'ADMIN' ? 'border-emerald-600 bg-emerald-50 text-emerald-950 font-bold' : 'border-neutral-200 bg-neutral-50 text-neutral-600'
-                  }`}>
-                    <input type="radio" name="role" value="ADMIN" checked={formRole === 'ADMIN'} onChange={() => setFormRole('ADMIN')} className="sr-only" />
+                  } ${editingUser?.isMaster ? 'cursor-not-allowed opacity-90' : ''}`}>
+                    <input
+                      type="radio"
+                      name="role"
+                      value="ADMIN"
+                      checked={formRole === 'ADMIN'}
+                      onChange={() => !editingUser?.isMaster && setFormRole('ADMIN')}
+                      disabled={editingUser?.isMaster}
+                      className="sr-only"
+                    />
                     <Crown className="w-4 h-4 mx-auto mb-1 text-emerald-600" />
                     <span className="text-xs">Admin</span>
                   </label>
                   <label className={`flex flex-col p-2.5 rounded-xl border text-center cursor-pointer transition ${
                     formRole === 'GERENTE' ? 'border-sky-600 bg-sky-50 text-sky-950 font-bold' : 'border-neutral-200 bg-neutral-50 text-neutral-600'
-                  }`}>
-                    <input type="radio" name="role" value="GERENTE" checked={formRole === 'GERENTE'} onChange={() => setFormRole('GERENTE')} className="sr-only" />
+                  } ${editingUser?.isMaster ? 'cursor-not-allowed opacity-40' : ''}`}>
+                    <input
+                      type="radio"
+                      name="role"
+                      value="GERENTE"
+                      checked={formRole === 'GERENTE'}
+                      onChange={() => !editingUser?.isMaster && setFormRole('GERENTE')}
+                      disabled={editingUser?.isMaster}
+                      className="sr-only"
+                    />
                     <ShieldCheck className="w-4 h-4 mx-auto mb-1 text-sky-600" />
                     <span className="text-xs">Gerente</span>
                   </label>
                   <label className={`flex flex-col p-2.5 rounded-xl border text-center cursor-pointer transition ${
                     formRole === 'EDITOR' ? 'border-amber-600 bg-amber-50 text-amber-950 font-bold' : 'border-neutral-200 bg-neutral-50 text-neutral-600'
-                  }`}>
-                    <input type="radio" name="role" value="EDITOR" checked={formRole === 'EDITOR'} onChange={() => setFormRole('EDITOR')} className="sr-only" />
+                  } ${editingUser?.isMaster ? 'cursor-not-allowed opacity-40' : ''}`}>
+                    <input
+                      type="radio"
+                      name="role"
+                      value="EDITOR"
+                      checked={formRole === 'EDITOR'}
+                      onChange={() => !editingUser?.isMaster && setFormRole('EDITOR')}
+                      disabled={editingUser?.isMaster}
+                      className="sr-only"
+                    />
                     <Edit2 className="w-4 h-4 mx-auto mb-1 text-amber-600" />
                     <span className="text-xs">Editor</span>
                   </label>
@@ -849,13 +1066,16 @@ export default function SettingsTab({ storeSlug, config, onRefresh }: SettingsTa
               <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
                 <div>
                   <div className="text-xs font-bold text-neutral-900">Usuário Ativo</div>
-                  <div className="text-[11px] text-neutral-500">Permite ou bloqueia o acesso ao painel.</div>
+                  <div className="text-[11px] text-neutral-500">
+                    {editingUser?.isMaster ? 'O administrador mestre deve permanecer ativo.' : 'Permite ou bloqueia o acesso ao painel.'}
+                  </div>
                 </div>
                 <input
                   type="checkbox"
                   checked={formAtivo}
-                  onChange={(e) => setFormAtivo(e.target.checked)}
-                  className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                  disabled={editingUser?.isMaster}
+                  onChange={(e) => !editingUser?.isMaster && setFormAtivo(e.target.checked)}
+                  className={`w-4 h-4 text-emerald-600 rounded ${editingUser?.isMaster ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
                 />
               </div>
 

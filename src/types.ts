@@ -176,6 +176,7 @@ export interface StoreUser {
   avatar?: string;
   role: UserRole;
   ativo: boolean;
+  isMaster?: boolean;
   ultimoAcesso?: string;
   createdAt?: string;
   updatedAt?: string;

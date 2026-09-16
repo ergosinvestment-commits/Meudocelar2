@@ -778,31 +778,39 @@ class DatabaseManager {
       updatedAt: new Date().toISOString()
     };
 
-    // Synchronize the admin user in users table
+    // Synchronize the master admin user in users table
     if (!this.data.users) this.data.users = [];
-    let adminUserObj = this.data.users.find(u => (u.storeId === currentStore.id || !u.storeId) && u.role === 'ADMIN');
+    const prevAdminUser = (currentStore.adminUser || 'admin').trim().toLowerCase();
+    let adminUserObj = this.data.users.find(u => 
+      u.isMaster === true || 
+      u.id === 'user-admin-1' || 
+      u.id === 'user-master-admin' || 
+      u.username.toLowerCase() === prevAdminUser
+    );
 
     if (adminUserObj) {
+      adminUserObj.isMaster = true;
       if (finalAdminEmail) adminUserObj.email = finalAdminEmail.toLowerCase();
-      if (finalAdminUser) adminUserObj.username = finalAdminUser.toLowerCase();
+      if (finalAdminUser) adminUserObj.username = finalAdminUser;
       if (finalAdminPassword) adminUserObj.password = finalAdminPassword;
       adminUserObj.updatedAt = new Date().toISOString();
       mysqlManager.saveUser(adminUserObj);
     } else {
       const newAdminUser: StoreUser = {
-        id: `user-${Date.now()}-admin`,
+        id: 'user-admin-1',
         storeId: currentStore.id,
-        nome: currentStore.storeName ? `Admin ${currentStore.storeName}` : 'Administrador',
-        email: (finalAdminEmail || 'admin@achadinhosdamaria.com.br').toLowerCase(),
-        username: (finalAdminUser || 'admin').toLowerCase(),
+        nome: 'Administrador Mestre',
+        email: (finalAdminEmail || 'admin@meudocelar.com.br').toLowerCase(),
+        username: finalAdminUser || 'admin',
         password: finalAdminPassword || hashPassword('admin'),
         role: 'ADMIN',
         ativo: true,
+        isMaster: true,
         avatar: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      this.data.users.push(newAdminUser);
+      this.data.users.unshift(newAdminUser);
       mysqlManager.saveUser(newAdminUser);
     }
 
@@ -1377,10 +1385,18 @@ class DatabaseManager {
       updatedAt: new Date().toISOString()
     };
 
-    // Also synchronize the primary admin user in users table
+    // Also synchronize the primary master admin user in users table
     if (!this.data.users) this.data.users = [];
-    const adminUserObj = this.data.users.find(u => (u.storeId === store.id || !u.storeId) && u.role === 'ADMIN');
+    const prevAdminUser = (store.adminUser || 'admin').trim().toLowerCase();
+    let adminUserObj = this.data.users.find(u => 
+      u.isMaster === true || 
+      u.id === 'user-admin-1' || 
+      u.id === 'user-master-admin' || 
+      u.username.toLowerCase() === prevAdminUser
+    );
+
     if (adminUserObj) {
+      adminUserObj.isMaster = true;
       if (updatedEmail) adminUserObj.email = updatedEmail;
       if (updatedUser) adminUserObj.username = updatedUser;
       if (hashedPassword) adminUserObj.password = hashedPassword;
@@ -1388,19 +1404,20 @@ class DatabaseManager {
       mysqlManager.saveUser(adminUserObj);
     } else {
       const newAdmin: StoreUser = {
-        id: `user-${Date.now()}-admin`,
+        id: 'user-admin-1',
         storeId: store.id,
-        nome: store.storeName ? `Admin ${store.storeName}` : 'Administrador',
-        email: updatedEmail || 'admin@achadinhosdamaria.com.br',
+        nome: 'Administrador Mestre',
+        email: updatedEmail || 'admin@meudocelar.com.br',
         username: updatedUser || 'admin',
         password: hashedPassword || hashPassword('admin'),
         role: 'ADMIN',
         ativo: true,
+        isMaster: true,
         avatar: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      this.data.users.push(newAdmin);
+      this.data.users.unshift(newAdmin);
       mysqlManager.saveUser(newAdmin);
     }
 
@@ -1416,10 +1433,47 @@ class DatabaseManager {
   public getUsers(storeSlug: string): StoreUser[] {
     const store = this.getStoreBySlug(storeSlug);
     const storeId = store?.id || 'store-1';
-    return (this.data.users || [])
+    const masterUsername = (store?.adminUser || 'admin').trim().toLowerCase();
+    const masterEmail = (store?.adminEmail || 'admin@meudocelar.com.br').trim().toLowerCase();
+
+    if (!this.data.users) this.data.users = [];
+
+    // Ensure Master Admin is present
+    let masterUser = this.data.users.find(u => 
+      u.isMaster === true || 
+      u.id === 'user-admin-1' || 
+      u.id === 'user-master-admin' || 
+      u.username.toLowerCase() === masterUsername
+    );
+
+    if (!masterUser) {
+      masterUser = {
+        id: 'user-admin-1',
+        storeId,
+        nome: 'Administrador Mestre',
+        email: masterEmail,
+        username: store?.adminUser || 'admin',
+        password: store?.adminPassword || hashPassword('admin'),
+        role: 'ADMIN',
+        ativo: true,
+        isMaster: true,
+        avatar: '',
+        createdAt: store?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      this.data.users.unshift(masterUser);
+    } else {
+      masterUser.isMaster = true;
+      if (!masterUser.nome || masterUser.nome === 'Admin') {
+        masterUser.nome = 'Administrador Mestre';
+      }
+    }
+
+    return this.data.users
       .filter(u => !u.storeId || u.storeId === storeId)
       .map(u => ({
         ...u,
+        isMaster: u.id === masterUser?.id || u.isMaster || u.username.toLowerCase() === masterUsername,
         password: '' // never send password hash to client list
       }));
   }
@@ -1547,8 +1601,11 @@ class DatabaseManager {
     this.saveData();
     mysqlManager.saveUser(updated);
 
-    // If updated user is an ADMIN, also sync the store record
-    if (updated.role === 'ADMIN' && this.data.stores) {
+    // If updated user is the Master Admin, also sync the store record
+    const isMasterUser = current.isMaster || current.id === 'user-admin-1' || current.id === 'user-master-admin' ||
+      (this.data.stores && this.data.stores.some(s => s.adminUser && s.adminUser.toLowerCase() === current.username.toLowerCase()));
+
+    if (isMasterUser && this.data.stores) {
       this.data.stores.forEach((s, storeIdx) => {
         if (s.id === updated.storeId || !updated.storeId || s.slug === 'achadinhos-da-maria') {
           this.data.stores[storeIdx] = {
@@ -1568,6 +1625,7 @@ class DatabaseManager {
       success: true,
       user: {
         ...updated,
+        isMaster: isMasterUser,
         password: '',
         passwordUpdatedAt: (updated as any).passwordUpdatedAt
       }
@@ -1579,6 +1637,12 @@ class DatabaseManager {
     const user = this.data.users.find(u => u.id === id);
     if (!user) {
       return { success: false, error: 'Usuário não encontrado.' };
+    }
+
+    // Cannot delete the master admin
+    if (user.isMaster || user.id === 'user-admin-1' || user.id === 'user-master-admin' ||
+        (this.data.stores && this.data.stores.some(s => s.adminUser && s.adminUser.toLowerCase() === user.username.toLowerCase()))) {
+      return { success: false, error: 'O usuário administrador mestre do sistema não pode ser excluído.' };
     }
 
     // Cannot delete the only active admin

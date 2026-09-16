@@ -960,16 +960,50 @@ if ($path === '/admin/auth/login' && $method === 'POST') {
 // USUÁRIOS - GET /admin/store/:slug/users
 if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/users$#', $path, $m) && $method === 'GET') {
     $slug = $m[1];
-    $storeStmt = $pdo->prepare("SELECT id FROM stores WHERE slug = ? LIMIT 1");
+    $storeStmt = $pdo->prepare("SELECT id, adminUser, adminEmail, storeName, createdAt FROM stores WHERE slug = ? LIMIT 1");
     $storeStmt->execute([$slug]);
-    $storeId = $storeStmt->fetchColumn() ?: 'store-1';
+    $storeRow = $storeStmt->fetch();
+    $storeId = $storeRow['id'] ?? 'store-1';
+    $masterUser = trim($storeRow['adminUser'] ?? 'admin');
+    $masterEmail = trim($storeRow['adminEmail'] ?? 'admin@meudocelar.com.br');
 
     $stmt = $pdo->prepare("SELECT id, storeId, nome, email, username, role, ativo, avatar, ultimoAcesso, createdAt, updatedAt FROM users WHERE storeId = ? ORDER BY createdAt DESC");
     $stmt->execute([$storeId]);
     $users = $stmt->fetchAll();
+
+    $hasMasterInList = false;
     foreach ($users as &$u) {
         $u['ativo'] = (bool)$u['ativo'];
+        $isThisMaster = ($u['id'] === 'user-admin-1' || strtolower($u['username']) === strtolower($masterUser));
+        $u['isMaster'] = $isThisMaster;
+        if ($isThisMaster) {
+            $hasMasterInList = true;
+            if (empty($u['nome']) || $u['nome'] === 'Admin') {
+                $u['nome'] = 'Administrador Mestre';
+            }
+        }
     }
+    unset($u);
+
+    // Se o usuário mestre não estiver na tabela users, insere dinamicamente no topo da lista
+    if (!$hasMasterInList) {
+        $masterObj = [
+            'id' => 'user-admin-1',
+            'storeId' => $storeId,
+            'nome' => 'Administrador Mestre',
+            'email' => $masterEmail,
+            'username' => $masterUser,
+            'role' => 'ADMIN',
+            'ativo' => true,
+            'isMaster' => true,
+            'avatar' => '',
+            'ultimoAcesso' => date('c'),
+            'createdAt' => $storeRow['createdAt'] ?? date('c'),
+            'updatedAt' => date('c')
+        ];
+        array_unshift($users, $masterObj);
+    }
+
     echo json_encode($users);
     exit;
 }
@@ -999,20 +1033,64 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/users$#', $path, $m) && $method 
     $stmtGet->execute([$id]);
     $newUser = $stmtGet->fetch();
     $newUser['ativo'] = (bool)$newUser['ativo'];
+    $newUser['isMaster'] = false;
     echo json_encode($newUser);
     exit;
 }
 
 // USUÁRIOS - PUT / PATCH / DELETE
 if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/users/([a-zA-Z0-9_-]+)$#', $path, $m)) {
+    $slug = $m[1];
     $userId = $m[2];
+
+    $storeStmt = $pdo->prepare("SELECT id, adminUser, adminEmail FROM stores WHERE slug = ? LIMIT 1");
+    $storeStmt->execute([$slug]);
+    $storeRow = $storeStmt->fetch();
+    $storeId = $storeRow['id'] ?? 'store-1';
+    $currentMasterUser = trim($storeRow['adminUser'] ?? 'admin');
+
     if ($method === 'DELETE') {
+        if ($userId === 'user-admin-1' || $userId === 'user-master-admin') {
+            http_response_code(400);
+            echo json_encode(['error' => 'O usuário administrador mestre do sistema não pode ser excluído.']);
+            exit;
+        }
+        // Verificar se usuário a ser deletado é o mestre
+        $chkMaster = $pdo->prepare("SELECT username FROM users WHERE id = ?");
+        $chkMaster->execute([$userId]);
+        $delUsername = $chkMaster->fetchColumn();
+        if (strtolower($delUsername) === strtolower($currentMasterUser)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'O usuário administrador mestre do sistema não pode ser excluído.']);
+            exit;
+        }
+
         $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
         $stmt->execute([$userId]);
         echo json_encode(['success' => true]);
         exit;
     }
+
     if ($method === 'PUT' || $method === 'PATCH') {
+        // Se for o ID user-admin-1 mas ainda não existir na tabela users, insere o registro inicial
+        if ($userId === 'user-admin-1') {
+            $chkExist = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+            $chkExist->execute([$userId]);
+            if (!$chkExist->fetchColumn()) {
+                $initialPass = !empty($body['password']) ? password_hash(trim($body['password']), PASSWORD_BCRYPT) : password_hash('admin', PASSWORD_BCRYPT);
+                $ins = $pdo->prepare("INSERT INTO users (id, storeId, nome, email, username, password, role, ativo, avatar) VALUES (?, ?, ?, ?, ?, ?, 'ADMIN', 1, ?)");
+                $ins->execute([
+                    'user-admin-1',
+                    $storeId,
+                    trim($body['nome'] ?? 'Administrador Mestre'),
+                    trim($body['email'] ?? ($storeRow['adminEmail'] ?? 'admin@meudocelar.com.br')),
+                    trim($body['username'] ?? $currentMasterUser),
+                    $initialPass,
+                    $body['avatar'] ?? ''
+                ]);
+            }
+        }
+
         $fields = [];
         $params = [];
         $allowed = ['nome', 'email', 'username', 'role', 'ativo', 'avatar'];
@@ -1024,21 +1102,55 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)/users/([a-zA-Z0-9_-]+)$#', $path
                 $params[] = $val;
             }
         }
+        $passHash = null;
         if (!empty($body['password'])) {
+            $passHash = password_hash(trim($body['password']), PASSWORD_BCRYPT);
             $fields[] = "`password` = ?";
-            $params[] = password_hash(trim($body['password']), PASSWORD_BCRYPT);
+            $params[] = $passHash;
         }
         if (!empty($fields)) {
             $params[] = $userId;
             $stmt = $pdo->prepare("UPDATE users SET " . implode(', ', $fields) . " WHERE id = ?");
             $stmt->execute($params);
         }
+
         $stmtGet = $pdo->prepare("SELECT id, storeId, nome, email, username, role, ativo, avatar, ultimoAcesso, createdAt, updatedAt FROM users WHERE id = ?");
         $stmtGet->execute([$userId]);
         $user = $stmtGet->fetch();
-        $user['ativo'] = (bool)$user['ativo'];
-        echo json_encode($user);
-        exit;
+        if ($user) {
+            $user['ativo'] = (bool)$user['ativo'];
+            $isMaster = ($userId === 'user-admin-1' || strtolower($user['username']) === strtolower($currentMasterUser));
+            $user['isMaster'] = $isMaster;
+
+            // Se for o usuário mestre, sincronizar também na tabela stores!
+            if ($isMaster) {
+                $sUpdates = [];
+                $sParams = [];
+                if (!empty($body['username'])) { $sUpdates[] = 'adminUser = ?'; $sParams[] = trim($body['username']); }
+                if (!empty($body['email'])) { $sUpdates[] = 'adminEmail = ?'; $sParams[] = trim($body['email']); }
+                if ($passHash) { $sUpdates[] = 'adminPassword = ?'; $sParams[] = $passHash; }
+                if (!empty($sUpdates)) {
+                    $sParams[] = $slug;
+                    $sStmt = $pdo->prepare("UPDATE stores SET " . implode(', ', $sUpdates) . " WHERE slug = ?");
+                    $sStmt->execute($sParams);
+                }
+            }
+            echo json_encode($user);
+            exit;
+        } else {
+            // Se ainda assim não retornou, retorna os dados atualizados
+            echo json_encode([
+                'id' => $userId,
+                'storeId' => $storeId,
+                'nome' => $body['nome'] ?? 'Administrador Mestre',
+                'email' => $body['email'] ?? '',
+                'username' => $body['username'] ?? '',
+                'role' => 'ADMIN',
+                'ativo' => true,
+                'isMaster' => true
+            ]);
+            exit;
+        }
     }
 }
 
@@ -1067,7 +1179,7 @@ if ($path === '/admin/auth/change-credentials' && $method === 'POST') {
         $stmt->execute($params);
     }
 
-    // Também sincroniza na tabela users para o usuário ADMIN
+    // Também sincroniza na tabela users para o usuário MESTRE
     try {
         $uFields = [];
         $uParams = [];
@@ -1076,9 +1188,19 @@ if ($path === '/admin/auth/change-credentials' && $method === 'POST') {
         if ($passHash) { $uFields[] = 'password = ?'; $uParams[] = $passHash; }
 
         if (!empty($uFields)) {
-            $uParams[] = $storeId;
-            $uStmt = $pdo->prepare("UPDATE users SET " . implode(', ', $uFields) . " WHERE storeId = ? AND role = 'ADMIN'");
-            $uStmt->execute($uParams);
+            $chkU = $pdo->prepare("SELECT id FROM users WHERE id = 'user-admin-1' OR username = ?");
+            $chkU->execute([$newUser ?: 'admin']);
+            $foundUserId = $chkU->fetchColumn();
+
+            if ($foundUserId) {
+                $uParams[] = $foundUserId;
+                $uStmt = $pdo->prepare("UPDATE users SET " . implode(', ', $uFields) . " WHERE id = ?");
+                $uStmt->execute($uParams);
+            } else {
+                $insPass = $passHash ?: password_hash('admin', PASSWORD_BCRYPT);
+                $insU = $pdo->prepare("INSERT INTO users (id, storeId, nome, email, username, password, role, ativo) VALUES ('user-admin-1', ?, 'Administrador Mestre', ?, ?, ?, 'ADMIN', 1)");
+                $insU->execute([$storeId, $newEmail ?: 'admin@meudocelar.com.br', $newUser ?: 'admin', $insPass]);
+            }
         }
     } catch (Exception $e) {}
 
@@ -1692,12 +1814,13 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)$#', $path, $m) && $method === 'P
         $stmt->execute($params);
     }
 
-    // Sincronizar na tabela users se alterou credenciais de admin
+    // Sincronizar na tabela users se alterou credenciais de admin mestre
     if (!empty($body['adminUser']) || !empty($body['adminEmail']) || $passHash) {
         try {
-            $storeStmt = $pdo->prepare("SELECT id FROM stores WHERE slug = ? LIMIT 1");
+            $storeStmt = $pdo->prepare("SELECT id, adminUser, adminEmail FROM stores WHERE slug = ? LIMIT 1");
             $storeStmt->execute([$slug]);
-            $sId = $storeStmt->fetchColumn() ?: 'store-1';
+            $sRow = $storeStmt->fetch();
+            $sId = $sRow['id'] ?? 'store-1';
 
             $uFields = [];
             $uParams = [];
@@ -1706,9 +1829,19 @@ if (preg_match('#^/admin/store/([a-zA-Z0-9_-]+)$#', $path, $m) && $method === 'P
             if ($passHash) { $uFields[] = 'password = ?'; $uParams[] = $passHash; }
 
             if (!empty($uFields)) {
-                $uParams[] = $sId;
-                $uStmt = $pdo->prepare("UPDATE users SET " . implode(', ', $uFields) . " WHERE storeId = ? AND role = 'ADMIN'");
-                $uStmt->execute($uParams);
+                $chkU = $pdo->prepare("SELECT id FROM users WHERE id = 'user-admin-1' OR username = ?");
+                $chkU->execute([$body['adminUser'] ?? 'admin']);
+                $foundId = $chkU->fetchColumn();
+
+                if ($foundId) {
+                    $uParams[] = $foundId;
+                    $uStmt = $pdo->prepare("UPDATE users SET " . implode(', ', $uFields) . " WHERE id = ?");
+                    $uStmt->execute($uParams);
+                } else {
+                    $insPass = $passHash ?: password_hash('admin', PASSWORD_BCRYPT);
+                    $insU = $pdo->prepare("INSERT INTO users (id, storeId, nome, email, username, password, role, ativo) VALUES ('user-admin-1', ?, 'Administrador Mestre', ?, ?, ?, 'ADMIN', 1)");
+                    $insU->execute([$sId, $body['adminEmail'] ?? 'admin@meudocelar.com.br', $body['adminUser'] ?? 'admin', $insPass]);
+                }
             }
         } catch (Exception $e) {}
     }
